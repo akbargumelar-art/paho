@@ -15,14 +15,16 @@ export async function GET() {
     try {
       const data = await fs.readFile(OPENCLAW_FILE, "utf-8");
       return NextResponse.json({ data: JSON.parse(data) });
-    } catch (e: any) {
-      if (e.code === 'ENOENT') {
+    } catch (e: unknown) {
+      const err = e as { code?: string };
+      if (err.code === 'ENOENT') {
          return NextResponse.json({ data: [] }); // File doesnt exist yet
       }
       throw e;
     }
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const err = error as Error;
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
@@ -37,7 +39,8 @@ export async function POST(req: Request) {
     await fs.writeFile(OPENCLAW_FILE, JSON.stringify(body.data, null, 2), "utf-8");
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const err = error as Error;
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

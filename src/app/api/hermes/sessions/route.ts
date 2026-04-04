@@ -44,8 +44,9 @@ export async function GET(req: Request) {
         totalPages: Math.ceil(totalCount[0].value / pageSize)
       }
     });
-  } catch (error: any) {
-    console.error("Failed to fetch sessions: ", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error("Failed to fetch sessions: ", err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

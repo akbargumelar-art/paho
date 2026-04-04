@@ -24,8 +24,9 @@ export async function GET(req: Request) {
         .orderBy(asc(hermesMessages.timestamp));
 
     return NextResponse.json({ data });
-  } catch (error: any) {
-    console.error("Failed to fetch messages: ", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error("Failed to fetch messages: ", err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

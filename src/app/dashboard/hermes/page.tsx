@@ -47,8 +47,9 @@ export default function HermesDashboard() {
       if (!res.ok) throw new Error("Failed to load sessions. Pastikan state.db terhubung!");
       const data = await res.json();
       setSessions(data.data);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      const e = err as Error;
+      setError(e.message);
     } finally {
       setLoadingSessions(false);
     }
@@ -62,7 +63,7 @@ export default function HermesDashboard() {
       if (!res.ok) throw new Error("Gagal mengambil percakapan.");
       const data = await res.json();
       setMessages(data.data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
     } finally {
       setLoadingMessages(false);
