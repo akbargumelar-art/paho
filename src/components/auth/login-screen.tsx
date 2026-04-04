@@ -128,9 +128,6 @@ export function LoginScreen() {
             </Button>
           </form>
 
-          <p className="text-center text-xs text-muted-foreground mt-6">
-            Gunakan <span className="font-mono text-foreground/70">admin / admin</span> untuk masuk
-          </p>
         </div>
       </div>
     </div>
