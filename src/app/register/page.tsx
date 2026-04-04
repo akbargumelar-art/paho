@@ -13,11 +13,12 @@ export default function RegisterAdmin() {
       const result = await authClient.signUp.username({
           username: "admin",
           password: "admin",
-          name: "Administrator"
+          name: "Administrator",
+          email: "admin@aspri.local"
       });
       
       if (result.error) {
-         setMsg("Error: " + result.error.message);
+         setMsg("Error API: " + JSON.stringify(result.error));
       } else {
          setMsg("Sukses! Anda sekarang bisa login.");
       }
