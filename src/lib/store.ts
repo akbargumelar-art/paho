@@ -79,7 +79,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (get().isLoading) return
     set({ isLoading: true })
     try {
-      const [tasks, taskGroups, reminders, projects, jobs, logs, approvals, pilotItems, policies, metrics] =
+      const [tasks, taskGroups, reminders, projects, jobsRes, logsRes, approvals, pilotItems, policiesRes, metrics] =
         await Promise.all([
           apiFetch('/api/tasks'),
           apiFetch('/api/task-groups'),
@@ -92,9 +92,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
           apiFetch('/api/policies'),
           apiFetch('/api/metrics'),
         ])
+
+      // Unwrap responses — beberapa API sekarang return objek bukan array langsung
+      // /api/jobs → { handoffJobs, cronJobs, all } | array (fallback)
+      const jobs = Array.isArray(jobsRes) ? jobsRes : (jobsRes?.all ?? jobsRes?.handoffJobs ?? [])
+
+      // /api/logs → { logs, total, ... } | array (fallback)
+      const logs = Array.isArray(logsRes) ? logsRes : (logsRes?.logs ?? [])
+
+      // /api/policies → { docs, isLive, ... } | array (fallback)
+      const policies = Array.isArray(policiesRes) ? policiesRes : (policiesRes?.docs ?? [])
+
       set({
-        tasks, taskGroups, reminders, projects, jobs, logs,
-        approvals, pilotItems, policies, metrics,
+        tasks: Array.isArray(tasks) ? tasks : [],
+        taskGroups: Array.isArray(taskGroups) ? taskGroups : [],
+        reminders: Array.isArray(reminders) ? reminders : [],
+        projects: Array.isArray(projects) ? projects : [],
+        jobs,
+        logs,
+        approvals: Array.isArray(approvals) ? approvals : [],
+        pilotItems: Array.isArray(pilotItems) ? pilotItems : [],
+        policies,
+        metrics,
         isInitialized: true,
       })
     } catch (err) {
