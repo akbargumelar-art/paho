@@ -1,77 +1,88 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { tasks, handoffJobs, approvalGuardrails, executionLogs } from "@/db/schema";
+import { tasks, handoffJobs } from "@/db/schema";
 import { getAuthSession, unauthorized } from "@/lib/api-auth";
-import { ne, eq, or, and, count } from "drizzle-orm";
+import { ne, eq, or, count } from "drizzle-orm";
+import { getHermesGatewayState, countHermesSessions } from "@/lib/live-sources/hermes-gateway";
+import { countPendingApprovals, getCronJobs } from "@/lib/live-sources/openclaw-files";
 
 export async function GET() {
   const session = await getAuthSession();
   if (!session) return unauthorized();
 
+  // ---- DB-authoritative counts (tasks & handoff jobs di aspri.db) ----
   const [activeTasksResult] = await db
     .select({ count: count() })
     .from(tasks)
     .where(ne(tasks.status, "completed"));
 
-  const [activeJobsResult] = await db
+  const [activeHandoffResult] = await db
     .select({ count: count() })
     .from(handoffJobs)
     .where(or(eq(handoffJobs.status, "running"), eq(handoffJobs.status, "queued")));
 
-  const [pendingApprovalsResult] = await db
-    .select({ count: count() })
-    .from(approvalGuardrails)
-    .where(eq(approvalGuardrails.reviewStatus, "pending"));
+  // ---- Live sources dari VPS (returns 0/null jika env tidak dikonfigurasi) ----
+  const [gatewayState, pendingApprovals, cronJobs, sessionCount] = await Promise.allSettled([
+    getHermesGatewayState(),
+    countPendingApprovals(),
+    getCronJobs(),
+    countHermesSessions(),
+  ]);
 
-  const [logsCountResult] = await db.select({ count: count() }).from(executionLogs);
+  const gateway = gatewayState.status === "fulfilled" ? gatewayState.value : null;
+  const approvalCount = pendingApprovals.status === "fulfilled" ? pendingApprovals.value : 0;
+  const activeCronJobs =
+    cronJobs.status === "fulfilled"
+      ? cronJobs.value.filter((j) => j.status !== "disabled").length
+      : 0;
+  const totalSessions = sessionCount.status === "fulfilled" ? sessionCount.value : 0;
 
-  const [highRiskResult] = await db
-    .select({ count: count() })
-    .from(approvalGuardrails)
-    .where(
-      and(
-        eq(approvalGuardrails.reviewStatus, "pending"),
-        or(
-          eq(approvalGuardrails.riskLevel, "high"),
-          eq(approvalGuardrails.riskLevel, "critical")
-        )
-      )
-    );
+  // ---- Status Hermes dari gateway_state.json ----
+  const hermesOnline = gateway?.gateway_state === "running";
+  const telegramOk = gateway?.platforms?.telegram?.state === "connected";
+  const whatsappOk = gateway?.platforms?.whatsapp?.state === "connected";
 
-  const [failedCriticalLogsResult] = await db
-    .select({ count: count() })
-    .from(executionLogs)
-    .where(
-      and(
-        eq(executionLogs.status, "failed"),
-        or(
-          eq(executionLogs.level, "ERROR"),
-          eq(executionLogs.level, "CRITICAL")
-        )
-      )
-    );
-
-  const highRiskPending = highRiskResult.count;
-  const failedCriticalLogs = failedCriticalLogsResult.count;
+  // ---- System health score ----
   const systemHealth = Math.max(
     20,
-    100 - (pendingApprovalsResult.count * 4) - (highRiskPending * 8) - (failedCriticalLogs * 6)
+    100 - approvalCount * 4 - (!hermesOnline ? 20 : 0) - (!telegramOk ? 5 : 0),
   );
 
   const systemStatus =
-    failedCriticalLogs >= 3
+    !hermesOnline
       ? "offline"
-      : highRiskPending > 0 || failedCriticalLogs > 0 || systemHealth < 85
+      : approvalCount > 0 || systemHealth < 85
         ? "degraded"
         : "online";
 
   return NextResponse.json({
+    // Core status
     systemStatus,
-    activeHermesTasks: activeTasksResult.count,
-    activeOpenClawJobs: activeJobsResult.count,
-    pendingApprovals: pendingApprovalsResult.count,
-    recentLogsCount: logsCountResult.count,
     systemHealth,
-    highRiskPending,
+
+    // Hermes (live dari gateway_state.json)
+    hermesStatus: gateway?.gateway_state ?? "unknown",
+    hermesOnline,
+    telegramConnected: telegramOk,
+    whatsappConnected: whatsappOk,
+    hermesUpdatedAt: gateway?.updated_at ?? null,
+    hermesPlatforms: gateway?.platforms ?? {},
+
+    // Tasks & jobs (Paho-authoritative dari aspri.db)
+    activeHermesTasks: activeTasksResult.count,
+    activeHandoffJobs: activeHandoffResult.count,
+
+    // OpenClaw (live dari cron/jobs.json)
+    activeOpenClawJobs: activeCronJobs,
+
+    // Approvals (live dari exec-approvals.json)
+    pendingApprovals: approvalCount,
+
+    // Session logs (live dari /root/.hermes/sessions/)
+    totalSessions,
+
+    // Legacy compat
+    recentLogsCount: 0,
+    highRiskPending: approvalCount,
   });
 }

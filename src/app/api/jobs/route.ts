@@ -5,14 +5,15 @@ import { getAuthSession, unauthorized } from "@/lib/api-auth";
 import { parseJobCreate } from "@/lib/api/contracts";
 import { handleRouteError, notFound, parseJsonObject } from "@/lib/api/errors";
 import { eq } from "drizzle-orm";
+import { getCronJobs } from "@/lib/live-sources/openclaw-files";
 
 export async function GET() {
   const session = await getAuthSession();
   if (!session) return unauthorized();
 
-  const all = await db.select().from(handoffJobs);
-  // Transform flat columns back to contextPack shape for frontend compatibility
-  const mapped = all.map((j: (typeof all)[number]) => ({
+  // Handoff jobs dari aspri.db (Paho-authoritative = tugas yang di-dispatch dari UI)
+  const dbJobs = await db.select().from(handoffJobs);
+  const mappedDbJobs = dbJobs.map((j) => ({
     id: j.id,
     taskId: j.taskId,
     contextPack: {
@@ -29,8 +30,42 @@ export async function GET() {
     returnPath: j.returnPath,
     approvalPath: j.approvalPath,
     riskLevel: j.riskLevel,
+    source: "paho" as const,
   }));
-  return NextResponse.json(mapped);
+
+  // Cron jobs dari OpenClaw cron/jobs.json (live dari VPS)
+  const cronJobs = await getCronJobs().catch(() => []);
+  const mappedCronJobs = cronJobs.map((j) => ({
+    id: j.id,
+    taskId: null,
+    contextPack: {
+      instruction: j.description ?? j.name ?? "",
+      dataSource: "",
+      schedule: j.schedule ?? "",
+    },
+    worker: "OPENCLAW",
+    jobType: "cron",
+    status: j.enabled === false ? "disabled" : (j.status ?? "active"),
+    returnOutput: j.last_run ? `Last run: ${j.last_run}` : null,
+    domain: "work",
+    ownerFinal: "OpenClaw",
+    returnPath: "",
+    approvalPath: "OpenClaw-backend-only",
+    riskLevel: "low",
+    source: "openclaw" as const,
+    // Extra fields dari cron
+    cronName: j.name,
+    cronSchedule: j.schedule,
+    nextRun: j.next_run ?? null,
+    lastRun: j.last_run ?? null,
+  }));
+
+  return NextResponse.json({
+    handoffJobs: mappedDbJobs,
+    cronJobs: mappedCronJobs,
+    // Combined untuk backward compat
+    all: [...mappedDbJobs, ...mappedCronJobs],
+  });
 }
 
 export async function POST(req: Request) {
@@ -60,6 +95,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         ...job,
+        source: "paho",
         contextPack: {
           instruction: job.contextInstruction,
           dataSource: job.contextDataSource,
@@ -72,4 +108,3 @@ export async function POST(req: Request) {
     return handleRouteError(error);
   }
 }
-
