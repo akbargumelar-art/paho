@@ -10,6 +10,9 @@ export type UnifiedLogEntry = {
   message: string;
   timestamp: string;
   raw?: string;
+  // Backward-compat fields (untuk komponen lama yang expect owner & status)
+  owner: "HERMES" | "OPENCLAW";
+  status: string;
 };
 
 function parseLogLine(raw: string, source: "Hermes" | "OpenClaw"): UnifiedLogEntry | null {
@@ -19,13 +22,16 @@ function parseLogLine(raw: string, source: "Hermes" | "OpenClaw"): UnifiedLogEnt
   // Coba parse sebagai JSON dulu (JSONL format)
   try {
     const obj = JSON.parse(raw) as Record<string, unknown>;
+    const level = (String(obj.level ?? obj.severity ?? "INFO").toUpperCase()) as UnifiedLogEntry["level"];
     return {
       id: `${source}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       source,
-      level: (String(obj.level ?? obj.severity ?? "INFO").toUpperCase()) as UnifiedLogEntry["level"],
+      level,
       message: String(obj.message ?? obj.msg ?? obj.text ?? raw),
       timestamp: String(obj.timestamp ?? obj.time ?? obj.created_at ?? new Date().toISOString()),
       raw,
+      owner: source === "Hermes" ? "HERMES" : "OPENCLAW",
+      status: level === "ERROR" || level === "CRITICAL" ? "failed" : "success",
     };
   } catch {
     // Plain text log — coba detect level dari konten
@@ -43,9 +49,12 @@ function parseLogLine(raw: string, source: "Hermes" | "OpenClaw"): UnifiedLogEnt
       message: raw,
       timestamp: new Date().toISOString(),
       raw,
+      owner: source === "Hermes" ? "HERMES" : "OPENCLAW",
+      status: level === "ERROR" || level === "CRITICAL" ? "failed" : "success",
     };
   }
 }
+
 
 export async function GET() {
   const session = await getAuthSession();

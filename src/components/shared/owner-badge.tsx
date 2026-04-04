@@ -2,8 +2,8 @@ import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Bot, Cpu } from "lucide-react"
 
-export function OwnerBadge({ owner }: { owner: "Hermes" | "OpenClaw" | "HERMES" | "OPENCLAW" | "System" }) {
-  const normalized = owner.toUpperCase()
+export function OwnerBadge({ owner }: { owner?: "Hermes" | "OpenClaw" | "HERMES" | "OPENCLAW" | "System" | string }) {
+  const normalized = (owner ?? "").toUpperCase()
   const isHermes = normalized === "HERMES"
   const isSystem = normalized === "SYSTEM"
 
