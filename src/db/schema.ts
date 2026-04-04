@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 
 // ============================================================
 // BETTER AUTH TABLES
@@ -166,4 +166,53 @@ export const modelPolicies = sqliteTable("model_policies", {
   rules: text("rules").notNull().default("[]"), // JSON array string
   tier: text("tier").notNull(), // high | cheap
   appliesTo: text("applies_to").notNull(), // Hermes | OpenClaw | Both
+});
+
+// ============================================================
+// HERMES LLM NATIVE STATE TABLES (from state.db)
+// ============================================================
+
+export const hermesSessions = sqliteTable("sessions", {
+  id: text("id").primaryKey(),
+  source: text("source").notNull(),
+  userId: text("user_id"),
+  model: text("model"),
+  modelConfig: text("model_config"),
+  systemPrompt: text("system_prompt"),
+  parentSessionId: text("parent_session_id"),
+  startedAt: real("started_at").notNull(),
+  endedAt: real("ended_at"),
+  endReason: text("end_reason"),
+  messageCount: integer("message_count").default(0),
+  toolCallCount: integer("tool_call_count").default(0),
+  inputTokens: integer("input_tokens").default(0),
+  outputTokens: integer("output_tokens").default(0),
+  cacheReadTokens: integer("cache_read_tokens").default(0),
+  cacheWriteTokens: integer("cache_write_tokens").default(0),
+  reasoningTokens: integer("reasoning_tokens").default(0),
+  billingProvider: text("billing_provider"),
+  billingBaseUrl: text("billing_base_url"),
+  billingMode: text("billing_mode"),
+  estimatedCostUsd: real("estimated_cost_usd"),
+  actualCostUsd: real("actual_cost_usd"),
+  costStatus: text("cost_status"),
+  costSource: text("cost_source"),
+  pricingVersion: text("pricing_version"),
+  title: text("title"),
+});
+
+export const hermesMessages = sqliteTable("messages", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sessionId: text("session_id").notNull(),
+  role: text("role").notNull(),
+  content: text("content"),
+  toolCallId: text("tool_call_id"),
+  toolCalls: text("tool_calls"),
+  toolName: text("tool_name"),
+  timestamp: real("timestamp").notNull(),
+  tokenCount: integer("token_count"),
+  finishReason: text("finish_reason"),
+  reasoning: text("reasoning"),
+  reasoningDetails: text("reasoning_details"),
+  codexReasoningItems: text("codex_reasoning_items"),
 });

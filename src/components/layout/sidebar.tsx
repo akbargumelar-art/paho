@@ -6,11 +6,14 @@ import { cn } from "@/lib/utils"
 import { useSidebarStore } from "@/lib/sidebar-store"
 import {
   LayoutDashboard, ListTodo, FolderKanban, Cpu, ScrollText,
-  ShieldCheck, BookOpen, ClipboardCheck, ChevronLeft, ChevronRight, Zap, X
+  ShieldCheck, BookOpen, ClipboardCheck, ChevronLeft, ChevronRight, Zap, X,
+  MessageSquare, FileJson
 } from "lucide-react"
 
 const menuItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/hermes", label: "Hermes Chat", icon: MessageSquare },
+  { href: "/dashboard/openclaw", label: "OpenClaw Editor", icon: FileJson },
   { href: "/dashboard/tasks", label: "Tugas & Pengingat", icon: ListTodo },
   { href: "/dashboard/projects", label: "Proyek", icon: FolderKanban },
   { href: "/dashboard/jobs", label: "Jobs & Handoff", icon: Cpu },
