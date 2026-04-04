@@ -11,7 +11,7 @@ export default function RegisterAdmin() {
     try {
       const result = await authClient.signUp.email({
           email: "admin@aspri.local",
-          password: "admin",
+          password: "admin123",
           name: "Administrator",
           username: "admin"
       });
