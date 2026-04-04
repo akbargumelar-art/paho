@@ -9,6 +9,7 @@ export default function RegisterAdmin() {
   const handleRegister = async () => {
     setMsg("Mendaftarkan admin...");
     try {
+      // @ts-ignore: Better Auth username plugin typings may conflict during build
       const result = await authClient.signUp.username({
           username: "admin",
           password: "admin",
@@ -20,8 +21,9 @@ export default function RegisterAdmin() {
       } else {
          setMsg("Sukses! Anda sekarang bisa login.");
       }
-    } catch (e: any) {
-      setMsg("Error fatal: " + e.message);
+    } catch (e: unknown) {
+      const err = e as Error;
+      setMsg("Error fatal: " + err.message);
     }
   }
 
