@@ -8,8 +8,9 @@ const domainConfig: Record<Domain, { label: string; className: string }> = {
   work: { label: "Kerja", className: "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30" },
 }
 
-export function DomainBadge({ domain }: { domain: Domain }) {
-  const config = domainConfig[domain]
+export function DomainBadge({ domain }: { domain?: Domain | string }) {
+  const config = domain ? domainConfig[domain as Domain] : undefined
+  if (!config) return null
   return (
     <Badge variant="outline" className={cn("text-[11px] font-semibold", config.className)}>
       {config.label}

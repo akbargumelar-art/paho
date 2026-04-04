@@ -10,8 +10,9 @@ const riskConfig: Record<RiskLevel, { label: string; className: string; icon: Re
   critical: { label: "Kritis", className: "bg-risk-critical/15 text-risk-critical border-risk-critical/30", icon: ShieldAlert },
 }
 
-export function RiskBadge({ level }: { level: RiskLevel }) {
-  const config = riskConfig[level]
+export function RiskBadge({ level }: { level?: RiskLevel | string }) {
+  const config = level ? riskConfig[level as RiskLevel] : undefined
+  if (!config) return null
   const Icon = config.icon
   return (
     <Badge variant="outline" className={cn("gap-1 text-[11px] font-semibold", config.className)}>

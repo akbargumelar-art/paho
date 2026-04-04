@@ -77,7 +77,11 @@ export default function JobsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(job => (
+                {filtered.map(job => {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const j = job as any
+                  const instruction = j.contextPack?.instruction ?? j.name ?? j.id
+                  return (
                   <tr
                     key={job.id}
                     onClick={() => setSelectedJob(job.id)}
@@ -88,17 +92,17 @@ export default function JobsPage() {
                     )}
                   >
                     <td className="px-4 py-3">
-                      <p className="font-medium text-sm">{job.contextPack.instruction}</p>
+                      <p className="font-medium text-sm">{instruction}</p>
                       <p className="text-xs text-muted-foreground font-mono">{job.id}</p>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant="outline" className="text-[11px] font-mono">{job.jobType}</Badge>
+                      <Badge variant="outline" className="text-[11px] font-mono">{job.jobType ?? j.taskType ?? "cron"}</Badge>
                     </td>
                     <td className="px-4 py-3"><StatusBadge status={job.status} /></td>
                     <td className="px-4 py-3"><DomainBadge domain={job.domain} /></td>
                     <td className="px-4 py-3"><RiskBadge level={job.riskLevel} /></td>
                     <td className="px-4 py-3"><ApprovalPathBadge path={job.approvalPath} /></td>
-                    <td className="px-4 py-3"><OwnerBadge owner={job.worker} /></td>
+                    <td className="px-4 py-3"><OwnerBadge owner={job.worker ?? j.worker} /></td>
                     <td className="px-4 py-3">
                       {job.ownerFinal === "Hermes" && (
                         <Badge variant="outline" className="gap-1 text-[11px] bg-hermes/10 text-hermes border-hermes/30 font-semibold">
@@ -107,7 +111,7 @@ export default function JobsPage() {
                       )}
                     </td>
                   </tr>
-                ))}
+                )})}
                 {filtered.length === 0 && (
                   <tr><td colSpan={8} className="text-center py-10 text-muted-foreground text-sm">Tidak ada job yang cocok dengan filter</td></tr>
                 )}

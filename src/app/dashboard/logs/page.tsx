@@ -191,12 +191,20 @@ export default function LogsPage() {
               <div>
                 <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Metadata</p>
                 <div className="bg-muted rounded-lg p-4 space-y-2">
-                  {Object.entries(detail.metadata).map(([k, v]) => (
-                    <div key={k} className="flex items-start gap-2">
-                      <span className="text-xs font-mono text-muted-foreground min-w-[80px]">{k}:</span>
-                      <span className="text-sm font-mono">{v}</span>
-                    </div>
-                  ))}
+                  {(() => {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const d = detail as any
+                    if (d.raw) return <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all">{d.raw}</pre>
+                    const meta: Record<string, unknown> = d.metadata ?? {}
+                    return Object.keys(meta).length > 0
+                      ? Object.entries(meta).map(([k, v]) => (
+                          <div key={k} className="flex items-start gap-2">
+                            <span className="text-xs font-mono text-muted-foreground min-w-[80px]">{k}:</span>
+                            <span className="text-sm font-mono">{String(v)}</span>
+                          </div>
+                        ))
+                      : <p className="text-xs text-muted-foreground">Tidak ada metadata tambahan</p>
+                  })()}
                 </div>
               </div>
             </div>
