@@ -11,17 +11,25 @@ export async function GET() {
     await db.delete(user).where(eq(user.username, "admin"));
     await db.delete(user).where(eq(user.id, "admin-user-001"));
 
-    // 2. Buat akun admin baru dengan fungsi native dari Better Auth
-    await auth.api.signUpUsername({
-      body: {
+    // 2. Buat akun admin baru via HTTP request internal ke Better Auth endpoint
+    const res = await fetch("http://localhost:3000/api/auth/sign-up/username", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         username: "admin",
         password: "admin",
-        name: "Admin"
-      }
+        name: "Admin",
+      }),
     });
+    
+    if (!res.ok) {
+       const text = await res.text();
+       throw new Error(`Gagal membuat uesr ` + text);
+    }
 
     return NextResponse.json({ success: true, message: "Admin berhasil direset. Silakan kembali ke /login" });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message });
+  } catch (error: unknown) {
+    const err = error as Error;
+    return NextResponse.json({ success: false, error: err.message });
   }
 }
