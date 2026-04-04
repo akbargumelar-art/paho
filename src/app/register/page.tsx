@@ -9,12 +9,11 @@ export default function RegisterAdmin() {
   const handleRegister = async () => {
     setMsg("Mendaftarkan admin...");
     try {
-      // @ts-expect-error: Better Auth username plugin typings may conflict during build
-      const result = await authClient.signUp.username({
-          username: "admin",
+      const result = await authClient.signUp.email({
+          email: "admin@aspri.local",
           password: "admin",
           name: "Administrator",
-          email: "admin@aspri.local"
+          username: "admin"
       });
       
       if (result.error) {
