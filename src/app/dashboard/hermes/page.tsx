@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { HermesNavTabs } from "@/components/shared/hermes-nav-tabs";
 
 type Session = {
   id: string;
@@ -71,7 +72,15 @@ export default function HermesDashboard() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-80px)] gap-6 animate-in fade-in zoom-in-95">
+    <div className="flex h-[calc(100vh-80px)] flex-col gap-4 animate-in fade-in zoom-in-95">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight md:text-2xl">Hermes</h1>
+          <p className="text-xs text-muted-foreground md:text-sm">Sessions dan Manager masih satu kategori, tapi dipisah via tab halaman.</p>
+        </div>
+        <HermesNavTabs />
+      </div>
+      <div className="flex min-h-0 flex-1 gap-6">
       
       {/* LEFT COLUMN: SESSIONS */}
       <Card className="w-1/3 flex flex-col h-full bg-slate-900/50 backdrop-blur-xl border-slate-800">
@@ -135,6 +144,7 @@ export default function HermesDashboard() {
           ))}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

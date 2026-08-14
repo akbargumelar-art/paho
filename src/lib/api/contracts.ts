@@ -17,6 +17,7 @@ const TASK_STATUSES = ["pending", "in-progress", "completed"] as const satisfies
 const RISK_LEVELS = ["low", "medium", "high", "critical"] as const satisfies readonly RiskLevel[];
 const REMINDER_STATUSES = ["active", "completed", "archived"] as const satisfies readonly ReminderStatus[];
 const REPEAT_INTERVALS = ["none", "daily", "weekly", "monthly", "yearly"] as const satisfies readonly RepeatInterval[];
+const RUNTIME_MODES = ["plan_only", "hermes_cron"] as const;
 const JOB_TYPES = ["cron", "polling", "subagent_task"] as const satisfies readonly JobType[];
 const JOB_STATUSES = ["queued", "running", "waiting_approval", "done"] as const satisfies readonly JobStatus[];
 const APPROVAL_PATHS = [
@@ -223,6 +224,8 @@ export function parseReminderCreate(payload: Record<string, unknown>) {
     domain: readEnum(payload, "domain", DOMAINS, true)!,
     status: readEnum(payload, "status", REMINDER_STATUSES) ?? "active",
     repeat: readEnum(payload, "repeat", REPEAT_INTERVALS) ?? "none",
+    runtimeMode: readEnum(payload, "runtimeMode", RUNTIME_MODES) ?? "plan_only",
+    runtimeJobId: readString(payload, "runtimeJobId", { nullable: true }) ?? null,
   };
 }
 
@@ -236,6 +239,8 @@ export function parseReminderUpdate(payload: Record<string, unknown>) {
   if (hasOwn(payload, "domain")) updates.domain = readEnum(payload, "domain", DOMAINS, true);
   if (hasOwn(payload, "status")) updates.status = readEnum(payload, "status", REMINDER_STATUSES, true);
   if (hasOwn(payload, "repeat")) updates.repeat = readEnum(payload, "repeat", REPEAT_INTERVALS, true);
+  if (hasOwn(payload, "runtimeMode")) updates.runtimeMode = readEnum(payload, "runtimeMode", RUNTIME_MODES, true);
+  if (hasOwn(payload, "runtimeJobId")) updates.runtimeJobId = readString(payload, "runtimeJobId", { nullable: true });
 
   return ensureUpdatePayload(updates);
 }

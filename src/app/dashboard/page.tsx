@@ -18,6 +18,8 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
+import { getGuardrailForAction, confirmGuardedAction } from "@/lib/guardrails"
+import { GuardrailWarning } from "@/components/shared/guardrail-warning"
 
 const metricCards = [
   { key: "systemStatus", label: "Status Sistem", icon: Activity, href: "/dashboard", getValue: (m: DashboardMetrics) => m.systemStatus === "online" ? "Online" : m.systemStatus === "degraded" ? "Degraded" : "Offline", color: "text-green-500" },
@@ -31,7 +33,7 @@ const metricCards = [
 type ModalType = "task" | "reminder" | "cron" | null
 
 export default function DashboardPage() {
-  const { logs, approvals, tasks, jobs, addTask, addReminder, addJob, metrics } = useAppStore()
+  const { logs, approvals, tasks, reminders, reminderHistory, jobs, addTask, addReminder, addJob, metrics } = useAppStore()
   const recentLogs = [...logs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 10)
   const highRiskPending = approvals.filter(a => (a.riskLevel === "high" || a.riskLevel === "critical") && a.reviewStatus === "pending")
 
@@ -59,6 +61,8 @@ export default function DashboardPage() {
   const [formApprovalPath, setFormApprovalPath] = useState<ApprovalPath>("Telegram-safe")
   const [formTriggerTime, setFormTriggerTime] = useState("")
   const [formRepeat, setFormRepeat] = useState<RepeatInterval>("none")
+  const [formRuntimeMode, setFormRuntimeMode] = useState<"plan_only" | "hermes_cron">("plan_only")
+  const cronGuardrail = getGuardrailForAction("create-cron-job", { riskLevel: formRisk })
 
   const resetForm = () => {
     setFormTitle("")
@@ -72,6 +76,7 @@ export default function DashboardPage() {
     setFormApprovalPath("Telegram-safe")
     setFormTriggerTime("")
     setFormRepeat("none")
+    setFormRuntimeMode("plan_only")
   }
 
   const openModal = (type: ModalType) => {
@@ -106,8 +111,12 @@ export default function DashboardPage() {
         domain: formDomain,
         status: "active",
         repeat: formRepeat,
+        runtimeMode: formRuntimeMode,
+        runtimeJobId: null,
       })
     } else if (modal === "cron") {
+      const guard = confirmGuardedAction("create-cron-job", { riskLevel: formRisk })
+      if (!guard.ok) return
       addJob({
         id: `j-${Date.now()}`,
         taskId: `t-auto-${Date.now()}`,
@@ -209,6 +218,27 @@ export default function DashboardPage() {
         })}
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="py-4">
+            <p className="text-xs text-muted-foreground">Reminder Aktif</p>
+            <p className="text-2xl font-bold text-hermes mt-1">{reminders.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4">
+            <p className="text-xs text-muted-foreground">Reminder History</p>
+            <p className="text-2xl font-bold text-openclaw mt-1">{reminderHistory.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4">
+            <p className="text-xs text-muted-foreground">Task + Reminder</p>
+            <p className="text-2xl font-bold mt-1">{tasks.length + reminders.length}</p>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Bottom Section: Recent Logs + Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Logs */}
@@ -256,6 +286,7 @@ export default function DashboardPage() {
             <CardContent className="space-y-2">
               {[
                 { href: "/dashboard/tasks", label: "Kelola Tugas", icon: Bot, desc: "Hermes Task Manager" },
+                { href: "/dashboard/reminders", label: "Reminder Center", icon: Bell, desc: `${reminders.length} aktif / ${reminderHistory.length} history` },
                 { href: "/dashboard/jobs", label: "Monitor Jobs", icon: Cpu, desc: "OpenClaw Worker Status" },
                 { href: "/dashboard/approvals", label: "Review Approvals", icon: ShieldAlert, desc: `${liveMetrics.pendingApprovals} menunggu` },
                 { href: "/dashboard/pilot", label: "Evaluasi Pilot", icon: Activity, desc: "Checklist progress" },
@@ -416,10 +447,19 @@ export default function DashboardPage() {
                       <option value="yearly">Tahunan</option>
                     </select>
                   </div>
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs uppercase tracking-wider text-muted-foreground">Mode Runtime</Label>
+                    <select value={formRuntimeMode} onChange={e => setFormRuntimeMode(e.target.value as "plan_only" | "hermes_cron")} className="mt-1.5 w-full h-9 rounded-md border border-input bg-transparent px-3 text-sm">
+                      <option value="plan_only">Plan-only (simpan di store)</option>
+                      <option value="hermes_cron">Runtime-bound (buat job Hermes cron)</option>
+                    </select>
+                  </div>
                 </div>
               )}
 
               {modal === "cron" && (
+                <>
+                <GuardrailWarning level={cronGuardrail.level} message={cronGuardrail.message} />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <Label className="text-xs uppercase tracking-wider text-muted-foreground">Tipe Job</Label>
@@ -452,6 +492,7 @@ export default function DashboardPage() {
                     </select>
                   </div>
                 </div>
+                </>
               )}
             </div>
 

@@ -11,10 +11,11 @@ export async function GET() {
   const session = await getAuthSession();
   if (!session) return unauthorized();
 
-  // Handoff jobs dari aspri.db (Paho-authoritative = tugas yang di-dispatch dari UI)
   const dbJobs = await db.select().from(handoffJobs);
-  const mappedDbJobs = dbJobs.map((j) => ({
+  const orchestrationJobs = dbJobs.map((j) => ({
     id: j.id,
+    sourceType: "orchestration_metadata" as const,
+    source: "paho" as const,
     taskId: j.taskId,
     contextPack: {
       instruction: j.contextInstruction,
@@ -30,17 +31,17 @@ export async function GET() {
     returnPath: j.returnPath,
     approvalPath: j.approvalPath,
     riskLevel: j.riskLevel,
-    source: "paho" as const,
   }));
 
-  // Cron jobs dari OpenClaw cron/jobs.json (live dari VPS)
   const cronJobs = await getCronJobs().catch(() => []);
-  const mappedCronJobs = cronJobs.map((j) => ({
+  const runtimeJobs = cronJobs.map((j) => ({
     id: j.id,
+    sourceType: "runtime_openclaw_cron" as const,
+    source: "openclaw" as const,
     taskId: null,
     contextPack: {
       instruction: j.description ?? j.name ?? "",
-      dataSource: "",
+      dataSource: "runtime:openclaw-cron",
       schedule: j.schedule ?? "",
     },
     worker: "OPENCLAW",
@@ -49,11 +50,9 @@ export async function GET() {
     returnOutput: j.last_run ? `Last run: ${j.last_run}` : null,
     domain: "work",
     ownerFinal: "OpenClaw",
-    returnPath: "",
+    returnPath: "runtime/openclaw",
     approvalPath: "OpenClaw-backend-only",
     riskLevel: "low",
-    source: "openclaw" as const,
-    // Extra fields dari cron
     cronName: j.name,
     cronSchedule: j.schedule,
     nextRun: j.next_run ?? null,
@@ -61,10 +60,13 @@ export async function GET() {
   }));
 
   return NextResponse.json({
-    handoffJobs: mappedDbJobs,
-    cronJobs: mappedCronJobs,
-    // Combined untuk backward compat
-    all: [...mappedDbJobs, ...mappedCronJobs],
+    orchestrationJobs,
+    runtimeJobs,
+    combinedView: [...orchestrationJobs, ...runtimeJobs],
+    summary: {
+      orchestrationCount: orchestrationJobs.length,
+      runtimeCount: runtimeJobs.length,
+    },
   });
 }
 
@@ -96,6 +98,7 @@ export async function POST(req: Request) {
       {
         ...job,
         source: "paho",
+        sourceType: "orchestration_metadata",
         contextPack: {
           instruction: job.contextInstruction,
           dataSource: job.contextDataSource,

@@ -24,13 +24,15 @@ export function LoginScreen() {
     setLoading(true)
 
     try {
-      const result = await authClient.signIn.username({
-        username,
-        password,
-      })
+      let result
+      if (username.includes('@')) {
+        result = await authClient.signIn.email({ email: username, password })
+      } else {
+        result = await authClient.signIn.username({ username, password })
+      }
 
       if (result.error) {
-        setError(result.error.message || "Username atau password salah")
+        setError(result.error.message || "Username/email atau password salah")
         setLoading(false)
         return
       }
@@ -70,7 +72,7 @@ export function LoginScreen() {
           <form onSubmit={handleLogin} className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="username" className="text-xs uppercase tracking-wider text-muted-foreground">
-                Username
+                Username / Email
               </Label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -78,7 +80,7 @@ export function LoginScreen() {
                   id="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Masukkan username"
+                  placeholder="Masukkan username atau email"
                   className="pl-10 h-11 bg-background/50"
                   autoComplete="username"
                 />
@@ -127,6 +129,10 @@ export function LoginScreen() {
               )}
             </Button>
           </form>
+
+          <p className="text-center text-xs text-muted-foreground mt-6">
+            Gunakan <span className="font-mono text-foreground/70">username</span> atau <span className="font-mono text-foreground/70">email</span> yang valid untuk masuk
+          </p>
 
         </div>
       </div>

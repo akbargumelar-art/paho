@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { useAppStore } from "@/lib/store"
 import type { ApprovalPath } from "@/lib/mock-data"
 import { Card, CardContent } from "@/components/ui/card"
@@ -11,6 +12,8 @@ import {
   Check, X, Lock, AlertTriangle, Shield
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { confirmGuardedAction } from "@/lib/guardrails"
+import { ActionToast, type ActionToastState } from "@/components/shared/action-toast"
 
 const sectionConfig: { path: ApprovalPath; icon: typeof MessageCircle; color: string; description: string }[] = [
   { path: "Telegram-safe", icon: MessageCircle, color: "text-green-500", description: "Approval aman melalui Telegram Push. Untuk task standar dengan risiko rendah." },
@@ -21,6 +24,14 @@ const sectionConfig: { path: ApprovalPath; icon: typeof MessageCircle; color: st
 
 export default function ApprovalsPage() {
   const { approvals, approveGuardrail, rejectGuardrail } = useAppStore()
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [toast, setToast] = useState<ActionToastState>(null)
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 2200)
+    return () => clearTimeout(t)
+  }, [toast])
 
   return (
     <div className="space-y-6 fade-in-up">
@@ -115,10 +126,10 @@ export default function ApprovalsPage() {
                           </div>
                         ) : (
                           <>
-                            <Button size="sm" className="flex-1 gap-1" onClick={() => approveGuardrail(item.id)}>
+                            <Button size="sm" className="flex-1 gap-1" disabled={busyId === item.id} onClick={async () => { const guard = confirmGuardedAction("approve-guardrail", { riskLevel: item.riskLevel }); if (!guard.ok) return; setBusyId(item.id); try { await approveGuardrail(item.id); setToast({ type: 'success', message: `Approval ${item.id} berhasil disetujui.` }) } catch { setToast({ type: 'error', message: `Gagal menyetujui ${item.id}.` }) } finally { setBusyId(null) } }}>
                               <Check className="w-3.5 h-3.5" /> Setujui
                             </Button>
-                            <Button size="sm" variant="destructive" className="flex-1 gap-1" onClick={() => rejectGuardrail(item.id)}>
+                            <Button size="sm" variant="destructive" className="flex-1 gap-1" disabled={busyId === item.id} onClick={async () => { const guard = confirmGuardedAction("reject-guardrail", { riskLevel: item.riskLevel }); if (!guard.ok) return; setBusyId(item.id); try { await rejectGuardrail(item.id); setToast({ type: 'success', message: `Approval ${item.id} berhasil ditolak.` }) } catch { setToast({ type: 'error', message: `Gagal menolak ${item.id}.` }) } finally { setBusyId(null) } }}>
                               <X className="w-3.5 h-3.5" /> Tolak
                             </Button>
                           </>
@@ -132,6 +143,8 @@ export default function ApprovalsPage() {
           </div>
         )
       })}
+
+      <ActionToast toast={toast} />
     </div>
   )
 }

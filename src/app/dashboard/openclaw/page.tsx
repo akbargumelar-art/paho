@@ -3,15 +3,27 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { confirmGuardedAction } from "@/lib/guardrails";
+import { ActionToast, type ActionToastState } from "@/components/shared/action-toast";
 
 export default function OpenClawDashboard() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busyIndex, setBusyIndex] = useState<number | null>(null);
+  const [toast, setToast] = useState<ActionToastState>(null);
+
+  const currentItem = (value: Record<string, unknown> | undefined) => value || {};
 
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2200);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -27,25 +39,45 @@ export default function OpenClawDashboard() {
   };
 
   const handleApprove = async (index: number) => {
+    const item = currentItem(items[index]);
+    const guard = confirmGuardedAction("approve-guardrail", { riskLevel: String(item?.risk_level || item?.riskLevel || "medium") });
+    if (!guard.ok) return;
+    setBusyIndex(index);
     const updated = [...items];
     updated[index].status = "APPROVED";
     setItems(updated);
-    
-    await fetch("/api/openclaw", {
-      method: "POST",
-      body: JSON.stringify({ data: updated }),
-    });
+    try {
+      await fetch("/api/openclaw", {
+        method: "POST",
+        body: JSON.stringify({ data: updated }),
+      });
+      setToast({ type: "success", message: "OpenClaw item berhasil di-approve." });
+    } catch {
+      setToast({ type: "error", message: "Gagal approve item OpenClaw." });
+    } finally {
+      setBusyIndex(null);
+    }
   };
 
   const handleReject = async (index: number) => {
+    const item = currentItem(items[index]);
+    const guard = confirmGuardedAction("reject-guardrail", { riskLevel: String(item?.risk_level || item?.riskLevel || "medium") });
+    if (!guard.ok) return;
+    setBusyIndex(index);
     const updated = [...items];
     updated[index].status = "REJECTED";
     setItems(updated);
-    
-    await fetch("/api/openclaw", {
-      method: "POST",
-      body: JSON.stringify({ data: updated }),
-    });
+    try {
+      await fetch("/api/openclaw", {
+        method: "POST",
+        body: JSON.stringify({ data: updated }),
+      });
+      setToast({ type: "success", message: "OpenClaw item berhasil di-reject." });
+    } catch {
+      setToast({ type: "error", message: "Gagal reject item OpenClaw." });
+    } finally {
+      setBusyIndex(null);
+    }
   };
 
   return (
@@ -71,10 +103,10 @@ export default function OpenClawDashboard() {
                     </pre>
                  </div>
                  <div className="flex flex-col gap-2 ml-4">
-                    <Button variant="default" className="bg-green-600/20 text-green-400 hover:bg-green-600/40" onClick={() => handleApprove(i)}>
+                    <Button variant="default" disabled={busyIndex === i} className="bg-green-600/20 text-green-400 hover:bg-green-600/40" onClick={() => handleApprove(i)}>
                        Approve
                     </Button>
-                    <Button variant="destructive" className="bg-red-600/20 text-red-500 hover:bg-red-600/40" onClick={() => handleReject(i)}>
+                    <Button variant="destructive" disabled={busyIndex === i} className="bg-red-600/20 text-red-500 hover:bg-red-600/40" onClick={() => handleReject(i)}>
                        Reject
                     </Button>
                  </div>
@@ -83,6 +115,7 @@ export default function OpenClawDashboard() {
           )}
         </CardContent>
       </Card>
+      <ActionToast toast={toast} />
     </div>
   );
 }

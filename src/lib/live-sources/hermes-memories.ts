@@ -17,8 +17,9 @@ import path from "path";
 //     archive/       ← direktori arsip
 //
 // CATATAN ARSITEKTUR:
-//   Tasks/Reminders yang DIKELOLA via Paho UI tetap di aspri.db (Paho-authoritative).
-//   File tasks/reminders di memories/ ini adalah milik Hermes natively — read-only view.
+//   Paho sedang bergerak ke model hybrid live UI.
+//   File memories/tasks/reminders/projects diperlakukan sebagai live source / reference source,
+//   bukan sekadar read-only bayangan dari DB-authoritative lama.
 // ============================================================
 
 const HERMES_MEMORIES_DIR = process.env.HERMES_MEMORIES_DIR || "";

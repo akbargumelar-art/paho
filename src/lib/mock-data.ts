@@ -51,6 +51,18 @@ export interface Task {
   createdAt: string
 }
 
+export interface TaskHistoryItem {
+  id: string
+  taskId: string
+  action: "created" | "updated" | "deleted" | "status_changed"
+  title: string
+  status: string
+  domain: Domain
+  timestamp: string
+  note?: string
+  sourceType?: string
+}
+
 export const mockTasks: Task[] = [
   { id: "t-001", title: "Riset tren pasar crypto mingguan", details: "Kumpulkan data harga BTC, ETH, SOL dari CoinGecko API setiap hari Senin dan buat ringkasan.", status: "in-progress", owner: "HERMES", domain: "business", groupId: "g-003", riskLevel: "medium", dueDate: "2026-04-10", createdAt: "2026-04-01" },
   { id: "t-002", title: "Backup database personal notes", details: "Jalankan backup otomatis ke cloud storage setiap minggu.", status: "pending", owner: "HERMES", domain: "personal", groupId: "g-001", riskLevel: "low", dueDate: "2026-04-07", createdAt: "2026-04-01" },
@@ -77,6 +89,11 @@ export interface Reminder {
   domain: Domain
   status: ReminderStatus
   repeat?: RepeatInterval
+  runtimeMode?: "plan_only" | "hermes_cron"
+  runtimeJobId?: string | null
+  sourceType?: string
+  responsePreview?: string
+  outputPath?: string
 }
 
 export const mockReminders: Reminder[] = [

@@ -9,17 +9,29 @@ import { Sidebar } from "@/components/layout/sidebar"
 import { Topbar } from "@/components/layout/topbar"
 import { cn } from "@/lib/utils"
 
+function hasAuthCookie() {
+  if (typeof document === 'undefined') return false
+  return document.cookie.includes('better-auth') || document.cookie.includes('session')
+}
+
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = useSession()
   const collapsed = useSidebarStore(s => s.collapsed)
   const { fetchAll, isInitialized } = useAppStore()
   const router = useRouter()
   const [ready, setReady] = useState(false)
+  const [pendingTooLong, setPendingTooLong] = useState(false)
 
   useEffect(() => {
-    if (isPending) return
+    if (!isPending) return
+    const t = setTimeout(() => setPendingTooLong(true), 2500)
+    return () => clearTimeout(t)
+  }, [isPending])
 
-    if (!session) {
+  useEffect(() => {
+    if (isPending && !pendingTooLong) return
+
+    if (!session && !hasAuthCookie()) {
       router.replace("/login")
     } else {
       setReady(true)
@@ -27,9 +39,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         fetchAll()
       }
     }
-  }, [session, isPending, router, fetchAll, isInitialized])
+  }, [session, isPending, pendingTooLong, router, fetchAll, isInitialized])
 
-  if (isPending || !ready) {
+  if ((isPending && !pendingTooLong) || !ready) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">

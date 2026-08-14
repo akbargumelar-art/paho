@@ -1,14 +1,16 @@
 import { create } from 'zustand'
 import type {
-  Task, Reminder, Project, HandoffJob, ExecutionLog,
+  Task, Reminder, Project, TaskHistoryItem, HandoffJob, ExecutionLog,
   ApprovalGuardrail, PilotEvaluationItem, TaskGroup, ModelPolicy, DashboardMetrics
 } from './mock-data'
 
 interface AppStore {
   // Data
   tasks: Task[]
+  taskHistory: TaskHistoryItem[]
   taskGroups: TaskGroup[]
   reminders: Reminder[]
+  reminderHistory: Reminder[]
   projects: Project[]
   jobs: HandoffJob[]
   logs: ExecutionLog[]
@@ -44,6 +46,8 @@ interface AppStore {
 
   // Job Actions
   addJob: (job: HandoffJob) => Promise<void>
+  deleteJob: (id: string, sourceType?: string) => Promise<void>
+  runtimeJobAction: (id: string, action: "pause" | "resume" | "remove", sourceType?: string) => Promise<void>
 
   // Pilot Actions
   togglePilotItem: (id: string) => Promise<void>
@@ -64,7 +68,9 @@ async function apiFetch(url: string, options?: RequestInit) {
 export const useAppStore = create<AppStore>((set, get) => ({
   tasks: [],
   taskGroups: [],
+  taskHistory: [],
   reminders: [],
+  reminderHistory: [],
   projects: [],
   jobs: [],
   logs: [],
@@ -79,7 +85,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (get().isLoading) return
     set({ isLoading: true })
     try {
-      const [tasks, taskGroups, reminders, projects, jobsRes, logsRes, approvals, pilotItems, policiesRes, metrics] =
+      const [tasks, taskGroups, remindersRes, projects, jobsRes, logsRes, approvals, pilotItems, policiesRes, metrics] =
         await Promise.all([
           apiFetch('/api/tasks'),
           apiFetch('/api/task-groups'),
@@ -94,20 +100,31 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ])
 
       // Unwrap responses — beberapa API sekarang return objek bukan array langsung
-      // /api/jobs → { handoffJobs, cronJobs, all } | array (fallback)
-      const jobs = Array.isArray(jobsRes) ? jobsRes : (jobsRes?.all ?? jobsRes?.handoffJobs ?? [])
+      // /api/jobs → { orchestrationJobs, runtimeJobs, combinedView } | legacy fallback
+      const jobs = Array.isArray(jobsRes) ? jobsRes : (jobsRes?.combinedView ?? jobsRes?.all ?? jobsRes?.orchestrationJobs ?? [])
 
-      // /api/logs → { logs, total, ... } | array (fallback)
-      const logs = Array.isArray(logsRes) ? logsRes : (logsRes?.logs ?? [])
+      // /api/logs → { combined, hermesLogs, openclawLogs } | legacy fallback
+      const logs = Array.isArray(logsRes) ? logsRes : (logsRes?.combined ?? logsRes?.hermesLogs ?? logsRes?.openclawLogs ?? logsRes?.logs ?? [])
 
       // /api/policies → { docs, isLive, ... } | array (fallback)
       const policies = Array.isArray(policiesRes) ? policiesRes : (policiesRes?.docs ?? [])
 
+      // /api/projects → { liveProjects, metadataProjects, combinedView } | legacy fallback
+      const projectItems = Array.isArray(projects) ? projects : (projects?.combinedView ?? projects?.liveProjects ?? projects?.metadataProjects ?? [])
+
+      let taskHistoryItems: TaskHistoryItem[] = []
+      try {
+        const hist = await apiFetch('/api/tasks/history')
+        taskHistoryItems = Array.isArray(hist) ? hist : (hist?.history ?? [])
+      } catch {}
+
       set({
         tasks: Array.isArray(tasks) ? tasks : [],
+        taskHistory: taskHistoryItems,
         taskGroups: Array.isArray(taskGroups) ? taskGroups : [],
-        reminders: Array.isArray(reminders) ? reminders : [],
-        projects: Array.isArray(projects) ? projects : [],
+        reminders: Array.isArray(remindersRes) ? remindersRes : (Array.isArray(remindersRes?.active) ? remindersRes.active : []),
+        reminderHistory: Array.isArray(remindersRes?.history) ? remindersRes.history : [],
+        projects: projectItems,
         jobs,
         logs,
         approvals: Array.isArray(approvals) ? approvals : [],
@@ -259,6 +276,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (err) {
       console.error('Failed to add job:', err)
       set((state) => ({ jobs: state.jobs.filter(j => j.id !== job.id) }))
+    }
+  },
+
+  deleteJob: async (id, sourceType) => {
+    const prev = get().jobs
+    set((state) => ({ jobs: state.jobs.filter(j => j.id !== id) }))
+    try {
+      await apiFetch(`/api/jobs/${id}?sourceType=${encodeURIComponent(sourceType || 'orchestration_metadata')}`, { method: 'DELETE' })
+    } catch (err) {
+      console.error('Failed to delete job:', err)
+      set({ jobs: prev })
+    }
+  },
+
+  runtimeJobAction: async (id, action, sourceType) => {
+    const prev = get().jobs
+    if (action === 'remove') {
+      set((state) => ({ jobs: state.jobs.filter(j => j.id !== id) }))
+    }
+    try {
+      await apiFetch(`/api/jobs/${id}`, { method: 'POST', body: JSON.stringify({ action, sourceType }) })
+    } catch (err) {
+      console.error('Failed runtime job action:', err)
+      set({ jobs: prev })
     }
   },
 

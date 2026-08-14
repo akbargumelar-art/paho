@@ -14,12 +14,14 @@ import { RiskBadge } from "@/components/shared/risk-badge"
 import { StatusBadge } from "@/components/shared/status-badge"
 import { DomainBadge } from "@/components/shared/domain-badge"
 import {
-  ListTodo, Bell, Plus, X, Calendar, Filter,
+  ListTodo, Bell, Plus, X, Calendar, Filter, Copy,
   Pause, Edit, Trash2, Check,
   FolderOpen, Tag, ChevronDown, ChevronRight,
   LayoutGrid, List, Layers
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { confirmGuardedAction, getGuardrailForAction } from "@/lib/guardrails"
+import { GuardrailWarning } from "@/components/shared/guardrail-warning"
 
 type Tab = "tasks" | "reminders"
 type ViewMode = "grouped" | "flat"
@@ -39,10 +41,11 @@ const GROUP_ICONS = [
 
 export default function TasksPage() {
   const {
-    tasks, reminders, taskGroups,
+    tasks, taskHistory, reminders, reminderHistory, taskGroups,
     addTask, updateTask, deleteTask, updateReminder,
     addTaskGroup, updateTaskGroup, deleteTaskGroup
   } = useAppStore()
+  const [selectedReminder, setSelectedReminder] = useState<(typeof reminders[number] & { sourceType?: string; responsePreview?: string; outputPath?: string; jobId?: string }) | null>(null)
 
   const [activeTab, setActiveTab] = useState<Tab>("tasks")
   const [viewMode, setViewMode] = useState<ViewMode>("grouped")
@@ -57,6 +60,8 @@ export default function TasksPage() {
   const [filterStatus, setFilterStatus] = useState<string>("all")
   const [filterRisk, setFilterRisk] = useState<RiskLevel | "all">("all")
   const [filterGroup, setFilterGroup] = useState<string>("all")
+  const [filterReminderSource, setFilterReminderSource] = useState<string>("all")
+  const deleteTaskGuard = getGuardrailForAction("delete-task")
 
   // Task form state
   const [formTitle, setFormTitle] = useState("")
@@ -88,6 +93,14 @@ export default function TasksPage() {
   const filteredReminders = reminders.filter(r => {
     if (filterDomain !== "all" && r.domain !== filterDomain) return false
     if (filterStatus !== "all" && r.status !== filterStatus) return false
+    if (filterReminderSource !== "all" && r.sourceType !== filterReminderSource) return false
+    return true
+  })
+
+  const filteredReminderHistory = reminderHistory.filter(r => {
+    if (filterDomain !== "all" && r.domain !== filterDomain) return false
+    if (filterStatus !== "all" && r.status !== filterStatus) return false
+    if (filterReminderSource !== "all" && r.sourceType !== filterReminderSource) return false
     return true
   })
 
@@ -228,6 +241,8 @@ export default function TasksPage() {
   }
 
   const handleDeleteGroup = (groupId: string) => {
+    const guard = confirmGuardedAction("delete-task-group")
+    if (!guard.ok) return
     deleteTaskGroup(groupId)
   }
 
@@ -280,7 +295,7 @@ export default function TasksPage() {
               <Pause className="w-3.5 h-3.5 text-amber-500" />
             </Button>
           )}
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteTask(task.id)} title="Hapus">
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { const guard = confirmGuardedAction("delete-task"); if (!guard.ok) return; deleteTask(task.id) }} title="Hapus">
             <Trash2 className="w-3.5 h-3.5 text-destructive" />
           </Button>
         </div>
@@ -339,6 +354,9 @@ export default function TasksPage() {
       {/* Filters */}
       <Card>
         <CardContent className="py-4">
+          <div className="mb-3">
+            <GuardrailWarning level={deleteTaskGuard.level} message={activeTab === "tasks" ? deleteTaskGuard.message : "Reminder Center aktif hanya mengizinkan toggle untuk live-store. Runtime reminder tidak ditulis langsung dari UI ini."} />
+          </div>
           <div className="flex items-center gap-3 overflow-x-auto pb-1 -mx-2 px-2 scrollbar-hide">
             <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
             <div className="flex gap-1">
@@ -364,6 +382,18 @@ export default function TasksPage() {
                 ))
               )}
             </div>
+            {activeTab === "reminders" && (
+              <>
+                <div className="w-px h-6 bg-border shrink-0" />
+                <div className="flex gap-1 shrink-0">
+                  {(["all", "live-store", "hermes-cron", "hermes-cron-output"] as const).map(src => (
+                    <button key={src} onClick={() => setFilterReminderSource(src)} className={cn("px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap", filterReminderSource === src ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground")}>
+                      {src === "all" ? "Semua Sumber" : src}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
             {activeTab === "tasks" && (
               <>
                 <div className="w-px h-6 bg-border shrink-0" />
@@ -636,60 +666,125 @@ export default function TasksPage() {
           </Card>
         )
       ) : (
-        /* ====== REMINDERS TAB ====== */
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[600px]">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Pengingat</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Waktu</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Perulangan</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Domain</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Aktif</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Pemilik</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredReminders.map(rem => (
-                    <tr key={rem.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-sm">{rem.title}</p>
-                        {rem.taskId && <p className="text-xs text-muted-foreground mt-0.5">Terkait: {rem.taskId}</p>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-sm text-muted-foreground">
-                          {new Date(rem.triggerTime).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-xs px-2 py-1 bg-muted rounded-md text-muted-foreground capitalize">
-                          {rem.repeat && rem.repeat !== "none" ? rem.repeat === "daily" ? "Harian" : rem.repeat === "weekly" ? "Mingguan" : rem.repeat === "monthly" ? "Bulanan" : "Tahunan" : "Sekali"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3"><DomainBadge domain={rem.domain} /></td>
-                      <td className="px-4 py-3"><StatusBadge status={rem.status} /></td>
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => updateReminder(rem.id, { isActive: !rem.isActive })}
-                          className={cn("w-10 h-5 rounded-full transition-colors relative", rem.isActive ? "bg-primary" : "bg-muted")}
-                        >
-                          <span className={cn("absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform", rem.isActive ? "left-5" : "left-0.5")} />
-                        </button>
-                      </td>
-                      <td className="px-4 py-3"><OwnerBadge owner={rem.owner} /></td>
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Bell className="w-5 h-5 text-primary" />
+                Pengingat Aktif & Runtime
+              </CardTitle>
+              <Badge variant="outline" className="text-[11px]">{filteredReminders.length}</Badge>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px]">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Pengingat</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Waktu</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Perulangan</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Domain</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Aktif</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Pemilik</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sumber</th>
                     </tr>
-                  ))}
-                  {filteredReminders.length === 0 && (
-                    <tr><td colSpan={7} className="text-center py-10 text-muted-foreground text-sm">Tidak ada pengingat yang cocok dengan filter</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+                  </thead>
+                  <tbody>
+                    {filteredReminders.map(rem => {
+                      const remView = rem as typeof rem & { sourceType?: string }
+                      return (
+                      <tr key={rem.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-sm">{rem.title}</p>
+                          {rem.taskId && <p className="text-xs text-muted-foreground mt-0.5">Terkait: {rem.taskId}</p>}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-sm text-muted-foreground">
+                            {rem.triggerTime ? new Date(rem.triggerTime).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "-"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs px-2 py-1 bg-muted rounded-md text-muted-foreground capitalize">
+                            {String(rem.repeat || 'none') !== "none" && String(rem.repeat || 'none') !== "custom" ? String(rem.repeat) === "daily" ? "Harian" : String(rem.repeat) === "weekly" ? "Mingguan" : String(rem.repeat) === "monthly" ? "Bulanan" : "Tahunan" : String(rem.repeat || 'none') === "custom" ? "Cron" : "Sekali"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3"><DomainBadge domain={rem.domain} /></td>
+                        <td className="px-4 py-3"><StatusBadge status={rem.status} /></td>
+                        <td className="px-4 py-3">
+                          {remView.sourceType === "live-store" ? (
+                            <button
+                              onClick={() => updateReminder(rem.id, { isActive: !rem.isActive })}
+                              className={cn("w-10 h-5 rounded-full transition-colors relative", rem.isActive ? "bg-primary" : "bg-muted")}
+                            >
+                              <span className={cn("absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform", rem.isActive ? "left-5" : "left-0.5")} />
+                            </button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">runtime</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3"><OwnerBadge owner={rem.owner} /></td>
+                        <td className="px-4 py-3"><Badge variant="outline" className="text-[11px]">{remView.sourceType || 'live-store'}</Badge></td>
+                      </tr>
+                    )})}
+                    {filteredReminders.length === 0 && (
+                      <tr><td colSpan={8} className="text-center py-10 text-muted-foreground text-sm">Tidak ada pengingat aktif yang cocok dengan filter</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Bell className="w-5 h-5 text-muted-foreground" />
+                History Pengingat
+              </CardTitle>
+              <Badge variant="outline" className="text-[11px]">{filteredReminderHistory.length}</Badge>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px]">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Pengingat</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Waktu</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Domain</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Pemilik</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sumber</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredReminderHistory.map(rem => {
+                      const remView = rem as typeof rem & { sourceType?: string }
+                      return (
+                      <tr key={rem.id} onClick={() => setSelectedReminder(remView)} className="border-b border-border/50 hover:bg-muted/20 transition-colors opacity-90 cursor-pointer">
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-sm">{rem.title}</p>
+                          {rem.taskId && <p className="text-xs text-muted-foreground mt-0.5">Terkait: {rem.taskId}</p>}
+                          {rem.responsePreview && (
+                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{rem.responsePreview}</p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3"><span className="text-sm text-muted-foreground">{rem.triggerTime ? new Date(rem.triggerTime).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "-"}</span></td>
+                        <td className="px-4 py-3"><DomainBadge domain={rem.domain} /></td>
+                        <td className="px-4 py-3"><StatusBadge status={rem.status} /></td>
+                        <td className="px-4 py-3"><OwnerBadge owner={rem.owner} /></td>
+                        <td className="px-4 py-3"><Badge variant="outline" className="text-[11px]">{remView.sourceType || 'live-store'}</Badge></td>
+                      </tr>
+                    )})}
+                    {filteredReminderHistory.length === 0 && (
+                      <tr><td colSpan={6} className="text-center py-10 text-muted-foreground text-sm">Belum ada history pengingat pada filter ini</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* ====== GROUP OVERVIEW SIDEBAR (below the main content) ====== */}
@@ -753,6 +848,148 @@ export default function TasksPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {activeTab === "tasks" && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ListTodo className="w-5 h-5 text-muted-foreground" />
+              History Tugas
+            </CardTitle>
+            <Badge variant="outline" className="text-[11px]">{taskHistory.length}</Badge>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px]">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Task</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Action</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Domain</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Waktu</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Catatan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {taskHistory.map(item => (
+                    <tr key={item.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-sm">{item.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 font-mono">{item.taskId}</p>
+                      </td>
+                      <td className="px-4 py-3"><Badge variant="outline" className="text-[11px]">{item.action}</Badge></td>
+                      <td className="px-4 py-3"><Badge variant="outline" className="text-[11px]">{item.status}</Badge></td>
+                      <td className="px-4 py-3"><DomainBadge domain={item.domain} /></td>
+                      <td className="px-4 py-3"><span className="text-sm text-muted-foreground">{new Date(item.timestamp).toLocaleString("id-ID")}</span></td>
+                      <td className="px-4 py-3"><span className="text-sm text-muted-foreground">{item.note || '-'}</span></td>
+                    </tr>
+                  ))}
+                  {taskHistory.length === 0 && (
+                    <tr><td colSpan={6} className="text-center py-10 text-muted-foreground text-sm">Belum ada history tugas</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === "tasks" && taskHistory.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ListTodo className="w-5 h-5 text-primary" />
+              Timeline History Tugas
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {taskHistory.slice(0, 12).map(item => (
+                <div key={`timeline-${item.id}`} className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <div className="w-3 h-3 rounded-full bg-primary mt-1" />
+                    <div className="w-px flex-1 bg-border mt-2" />
+                  </div>
+                  <div className="flex-1 rounded-xl border border-border bg-muted/20 p-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <p className="font-medium text-sm">{item.title}</p>
+                      <span className="text-xs text-muted-foreground">{new Date(item.timestamp).toLocaleString("id-ID")}</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap mt-2">
+                      <Badge variant="outline" className="text-[11px]">{item.action}</Badge>
+                      <DomainBadge domain={item.domain} />
+                      <Badge variant="outline" className="text-[11px]">{item.status}</Badge>
+                    </div>
+                    {item.note && <p className="text-xs text-muted-foreground mt-2">{item.note}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {selectedReminder && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm" onClick={() => setSelectedReminder(null)}>
+          <div className="w-full max-w-lg bg-card border-l border-border shadow-2xl h-full overflow-y-auto slide-in-right" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-card/80 backdrop-blur-md border-b border-border px-6 py-4 flex items-center justify-between">
+              <h3 className="font-semibold">Detail Reminder</h3>
+              <Button variant="ghost" size="icon" onClick={() => setSelectedReminder(null)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="flex items-center gap-3 flex-wrap">
+                <StatusBadge status={selectedReminder.status} />
+                <DomainBadge domain={selectedReminder.domain} />
+                <OwnerBadge owner={selectedReminder.owner} />
+                <Badge variant="outline" className="text-[11px]">{selectedReminder.sourceType || 'live-store'}</Badge>
+              </div>
+
+              <div>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Judul</p>
+                <p className="text-sm font-medium">{selectedReminder.title}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Waktu</p>
+                  <p className="text-sm">{selectedReminder.triggerTime || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Repeat</p>
+                  <p className="text-sm">{selectedReminder.repeat || 'none'}</p>
+                </div>
+              </div>
+
+              {'jobId' in selectedReminder && selectedReminder.jobId && (
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Job ID</p>
+                  <p className="text-sm font-mono break-all">{selectedReminder.jobId}</p>
+                </div>
+              )}
+
+              {'outputPath' in selectedReminder && selectedReminder.outputPath && (
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Output Path</p>
+                  <div className="flex gap-2 items-start">
+                    <p className="text-sm font-mono break-all flex-1">{selectedReminder.outputPath}</p>
+                    <Button variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(String(selectedReminder.outputPath))}><Copy className="w-3 h-3 mr-1" /> Copy Path</Button>
+                  </div>
+                </div>
+              )}
+
+              {'responsePreview' in selectedReminder && selectedReminder.responsePreview && (
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Preview</p>
+                  <div className="bg-muted rounded-lg p-3 text-sm whitespace-pre-wrap break-words">{String(selectedReminder.responsePreview).replaceAll(' | ', '\n')}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ====== CREATE/EDIT TASK MODAL ====== */}

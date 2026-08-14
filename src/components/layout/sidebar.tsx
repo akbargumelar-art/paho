@@ -7,21 +7,67 @@ import { useSidebarStore } from "@/lib/sidebar-store"
 import {
   LayoutDashboard, ListTodo, FolderKanban, Cpu, ScrollText,
   ShieldCheck, BookOpen, ClipboardCheck, ChevronLeft, ChevronRight, Zap, X,
-  MessageSquare, FileJson
+  MessageSquare, FileJson, Bell, Network, Boxes
 } from "lucide-react"
 
-const menuItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/hermes", label: "Hermes Chat", icon: MessageSquare },
-  { href: "/dashboard/openclaw", label: "OpenClaw Editor", icon: FileJson },
-  { href: "/dashboard/tasks", label: "Tugas & Pengingat", icon: ListTodo },
-  { href: "/dashboard/projects", label: "Proyek", icon: FolderKanban },
-  { href: "/dashboard/jobs", label: "Jobs & Handoff", icon: Cpu },
-  { href: "/dashboard/logs", label: "Log Eksekusi", icon: ScrollText },
-  { href: "/dashboard/approvals", label: "Approval & Guardrails", icon: ShieldCheck },
-  { href: "/dashboard/policy", label: "Kebijakan Model", icon: BookOpen },
-  { href: "/dashboard/pilot", label: "Evaluasi Pilot", icon: ClipboardCheck },
+type MenuItem = {
+  href: string
+  label: string
+  icon: typeof LayoutDashboard
+}
+
+type MenuGroup = {
+  title: string
+  items: MenuItem[]
+}
+
+const menuGroups: MenuGroup[] = [
+  {
+    title: "Utama",
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    ],
+  },
+  {
+    title: "Chat & Project",
+    items: [
+      { href: "/dashboard/chat", label: "Chat", icon: MessageSquare },
+      { href: "/dashboard/project-contexts", label: "Project Context", icon: FolderKanban },
+      { href: "/dashboard/projects", label: "Proyek Live", icon: FolderKanban },
+    ],
+  },
+  {
+    title: "Agents",
+    items: [
+      { href: "/dashboard/agents", label: "Agent Map", icon: Network },
+      { href: "/dashboard/hermes", label: "Hermes", icon: Boxes },
+      { href: "/dashboard/openclaw", label: "OpenClaw Editor", icon: FileJson },
+    ],
+  },
+  {
+    title: "Workflows",
+    items: [
+      { href: "/dashboard/tasks", label: "Tugas & Pengingat", icon: ListTodo },
+      { href: "/dashboard/reminders", label: "Reminder Center", icon: Bell },
+      { href: "/dashboard/jobs", label: "Jobs & Handoff", icon: Cpu },
+      { href: "/dashboard/logs", label: "Log Eksekusi", icon: ScrollText },
+    ],
+  },
+  {
+    title: "Governance",
+    items: [
+      { href: "/dashboard/approvals", label: "Approval & Guardrails", icon: ShieldCheck },
+      { href: "/dashboard/policy", label: "Kebijakan Model", icon: BookOpen },
+      { href: "/dashboard/pilot", label: "Evaluasi Pilot", icon: ClipboardCheck },
+    ],
+  },
 ]
+
+function isRouteActive(pathname: string, href: string) {
+  if (href === "/dashboard") return pathname === href
+  if (href === "/dashboard/hermes") return pathname === href || pathname.startsWith(`${href}/`) || pathname === "/dashboard/hermes-manager" || pathname.startsWith("/dashboard/hermes-manager/")
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -68,29 +114,42 @@ export function Sidebar() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-          {menuItems.map((item) => {
-            const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href))
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setMobileOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group relative",
-                  isActive
-                    ? "bg-primary/10 text-primary shadow-sm"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                )}
-              >
-                {isActive && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-primary rounded-r-full" />
-                )}
-                <item.icon className={cn("w-5 h-5 shrink-0", isActive && "text-primary")} />
-                {(!collapsed || mobileOpen) && <span className="truncate">{item.label}</span>}
-              </Link>
-            )
-          })}
+        <nav className="flex-1 py-4 px-3 space-y-4 overflow-y-auto">
+          {menuGroups.map((group) => (
+            <div key={group.title} className="space-y-1">
+              {(!collapsed || mobileOpen) ? (
+                <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
+                  {group.title}
+                </div>
+              ) : (
+                <div className="mx-auto mb-2 h-px w-8 bg-border" />
+              )}
+
+              {group.items.map((item) => {
+                const isActive = isRouteActive(pathname, item.href)
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMobileOpen(false)}
+                    title={collapsed && !mobileOpen ? item.label : undefined}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group relative",
+                      isActive
+                        ? "bg-primary/10 text-primary shadow-sm"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    )}
+                  >
+                    {isActive && (
+                      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-primary rounded-r-full" />
+                    )}
+                    <item.icon className={cn("w-5 h-5 shrink-0", isActive && "text-primary")} />
+                    {(!collapsed || mobileOpen) && <span className="truncate">{item.label}</span>}
+                  </Link>
+                )
+              })}
+            </div>
+          ))}
         </nav>
 
         {/* Collapse toggle (desktop only) */}
