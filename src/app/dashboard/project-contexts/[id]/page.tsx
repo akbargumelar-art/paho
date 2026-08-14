@@ -168,6 +168,13 @@ export default function ProjectContextDetailPage() {
     setMessages([]);
   };
 
+  const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      void sendMessage(event);
+    }
+  };
+
   if (loading) return <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Memuat project...</div>;
   if (!project) return <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">{error || "Project tidak ditemukan."}</div>;
 
@@ -226,7 +233,7 @@ export default function ProjectContextDetailPage() {
         </Card>
 
         <form onSubmit={sendMessage} className="rounded-2xl border border-border bg-card p-3 shadow-lg">
-          <div className="flex items-end gap-3"><Textarea value={input} onChange={(event) => setInput(event.target.value)} placeholder={`Tulis pesan untuk project ${project.title}...`} className="max-h-48 min-h-[52px] resize-none border-0 bg-transparent focus-visible:ring-0" disabled={chatLoading} /><div className="flex shrink-0 items-end gap-2"><select value={activeAgent} onChange={(event) => setActiveAgent(event.target.value as AgentId)} className="h-11 w-32 rounded-xl border border-input bg-background px-3 text-xs md:w-40" disabled={chatLoading}>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select><Button type="submit" size="icon" className="h-11 w-11 rounded-xl" disabled={!input.trim() || chatLoading}>{chatLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</Button></div></div>
+          <div className="flex items-end gap-3"><div className="min-w-0 flex-1"><Textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={onKeyDown} placeholder={`Tulis pesan untuk project ${project.title}...`} className="max-h-48 min-h-[52px] resize-none border-0 bg-transparent focus-visible:ring-0" disabled={chatLoading} /><p className="px-3 pt-1 text-[10px] text-muted-foreground">Enter untuk kirim · Shift+Enter untuk baris baru</p></div><div className="flex shrink-0 items-end gap-2"><select value={activeAgent} onChange={(event) => setActiveAgent(event.target.value as AgentId)} className="h-11 w-32 rounded-xl border border-input bg-background px-3 text-xs md:w-40" disabled={chatLoading}>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select><Button type="submit" size="icon" className="h-11 w-11 rounded-xl" disabled={!input.trim() || chatLoading}>{chatLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</Button></div></div>
         </form>
       </div>
     </div>

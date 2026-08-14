@@ -384,9 +384,9 @@ export default function ChatPage() {
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      void sendMessage();
+      void sendMessage(event);
     }
   };
 
@@ -517,7 +517,10 @@ export default function ChatPage() {
 
       <form onSubmit={sendMessage} className="rounded-2xl border border-border bg-card p-3 shadow-lg">
         <div className="flex items-end gap-3">
-          <Textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={onKeyDown} placeholder={`Tulis pesan untuk ${currentAgent.name}${currentProject ? ` di project ${currentProject.title}` : ""}...`} className="max-h-48 min-h-[52px] resize-none border-0 bg-transparent focus-visible:ring-0" disabled={loading} />
+          <div className="min-w-0 flex-1">
+            <Textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={onKeyDown} placeholder={`Tulis pesan untuk ${currentAgent.name}${currentProject ? ` di project ${currentProject.title}` : ""}...`} className="max-h-48 min-h-[52px] resize-none border-0 bg-transparent focus-visible:ring-0" disabled={loading} />
+            <p className="px-3 pt-1 text-[10px] text-muted-foreground">Enter untuk kirim · Shift+Enter untuk baris baru</p>
+          </div>
           <div className="flex shrink-0 items-end gap-2">
             <select
               value={activeAgent}
