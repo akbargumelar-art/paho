@@ -32,6 +32,15 @@ const agentIcons: Record<AgentId, typeof Bot> = { corla: Bot, oca: Zap, gadis: B
 function domainLabel(domain: ProjectDomain) { return domain === "work" ? "Work" : domain === "personal" ? "Personal" : domain === "business" ? "Bisnis" : "General"; }
 function defaultAgentForDomain(domain?: ProjectDomain): AgentId { return domain === "work" ? "gadis" : domain === "personal" ? "priska" : domain === "business" ? "bunga" : "corla"; }
 
+async function readJson(res: Response) {
+  const text = await res.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`Server mengembalikan ${res.headers.get("content-type") || "non-JSON"} (${res.status}). ${text.slice(0, 120).replace(/\s+/g, " ")}`);
+  }
+}
+
 export default function ProjectContextDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -60,7 +69,7 @@ export default function ProjectContextDetailPage() {
     setError("");
     try {
       const res = await fetch("/api/chat/projects?includeArchived=true");
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data?.error || "Gagal memuat project.");
       const found = (data.projects || []).find((item: ChatProject) => item.id === projectId);
       if (!found) throw new Error("Project tidak ditemukan.");
@@ -75,7 +84,7 @@ export default function ProjectContextDetailPage() {
 
   const fetchThreads = async (agent: AgentId) => {
     const res = await fetch(`/api/chat/threads?agent=${agent}&projectId=${encodeURIComponent(projectId)}`);
-    const data = await res.json();
+    const data = await readJson(res);
     if (!res.ok) throw new Error(data?.error || "Gagal memuat daftar chat.");
     setThreads(data.threads || []);
   };
@@ -84,7 +93,7 @@ export default function ProjectContextDetailPage() {
     const qs = new URLSearchParams({ agent, projectId });
     if (threadId) qs.set("threadId", threadId);
     const res = await fetch(`/api/chat?${qs.toString()}`);
-    const data = await res.json();
+    const data = await readJson(res);
     if (!res.ok) throw new Error(data?.error || "Gagal memuat chat.");
     setMessages(data.messages || []);
     setAgents(data.agents || fallbackAgents);
@@ -105,7 +114,7 @@ export default function ProjectContextDetailPage() {
     setError("");
     try {
       const res = await fetch("/api/chat/projects", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(project) });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data?.error || "Gagal menyimpan project.");
       setProject(data.project);
     } catch (err) { setError((err as Error).message); }
@@ -121,7 +130,7 @@ export default function ProjectContextDetailPage() {
       formData.append("projectId", project.id);
       formData.append("file", file);
       const res = await fetch("/api/chat/projects/upload", { method: "POST", body: formData });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data?.error || "Gagal upload file context.");
       setProject(data.project);
     } catch (err) { setError((err as Error).message); }
@@ -130,7 +139,7 @@ export default function ProjectContextDetailPage() {
 
   const newChat = async () => {
     const res = await fetch("/api/chat/threads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent: activeAgent, projectId, title: "Chat baru" }) });
-    const data = await res.json();
+    const data = await readJson(res);
     if (!res.ok) return setError(data?.error || "Gagal membuat chat baru.");
     setThreads((prev) => [data.thread, ...prev.filter((thread) => thread.id !== data.thread.id)]);
     setActiveThreadId(data.thread.id);
@@ -148,7 +157,7 @@ export default function ProjectContextDetailPage() {
     setError("");
     try {
       const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent: activeAgent, projectId, threadId: activeThreadId, message: text }) });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data?.error || "Gagal mengirim pesan.");
       setMessages(data.messages || []);
       if (data.threadId) setActiveThreadId(data.threadId);

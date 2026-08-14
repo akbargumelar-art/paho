@@ -82,11 +82,16 @@ function isTextLike(filename: string, type: string) {
 }
 
 async function extractPdf(filePath: string) {
-  const { stdout } = await execFileAsync("pdftotext", ["-layout", "-enc", "UTF-8", filePath, "-"], {
-    timeout: 60_000,
-    maxBuffer: 1024 * 1024 * 2,
-  });
-  return stdout.trim();
+  try {
+    const { stdout } = await execFileAsync("pdftotext", ["-layout", "-enc", "UTF-8", filePath, "-"], {
+      timeout: 60_000,
+      maxBuffer: 1024 * 1024 * 2,
+    });
+    return stdout.trim();
+  } catch (error) {
+    const err = error as Error;
+    return `[PDF tersimpan, tetapi ekstraksi teks gagal: ${err.message}]`;
+  }
 }
 
 async function extractImage(filePath: string) {
@@ -123,12 +128,13 @@ async function extractContent(filePath: string, filename: string, type: string, 
 }
 
 export async function POST(req: Request) {
-  const session = await getAuthSession();
-  if (!session) return unauthorized();
+  try {
+    const session = await getAuthSession();
+    if (!session) return unauthorized();
 
-  const form = await req.formData();
-  const projectId = String(form.get("projectId") || "");
-  const file = form.get("file");
+    const form = await req.formData();
+    const projectId = String(form.get("projectId") || "");
+    const file = form.get("file");
 
   if (!projectId) return NextResponse.json({ error: "Project id wajib diisi." }, { status: 400 });
   if (!(file instanceof File)) return NextResponse.json({ error: "File wajib diupload." }, { status: 400 });
@@ -182,9 +188,13 @@ export async function POST(req: Request) {
   const updated = projects.find((item) => item.id === projectId)!;
   await saveStore({ projects });
 
-  return NextResponse.json({
-    ok: true,
-    project: updated,
-    file: uploadedFile,
-  });
+    return NextResponse.json({
+      ok: true,
+      project: updated,
+      file: uploadedFile,
+    });
+  } catch (error) {
+    const err = error as Error;
+    return NextResponse.json({ error: err.message || "Upload file gagal." }, { status: 500 });
+  }
 }
