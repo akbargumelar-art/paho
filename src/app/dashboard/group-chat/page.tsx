@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +47,8 @@ export default function GroupChatPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState("");
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const loadRooms = useCallback(async () => {
     try {
@@ -106,6 +108,13 @@ export default function GroupChatPage() {
     }, 1500);
     return () => clearInterval(timer);
   }, [room]);
+
+  useEffect(() => {
+    // Keep replies visible while the composer stays pinned at the bottom. This
+    // avoids the old flow where abay typed at the top, then had to scroll back
+    // down to see agent replies.
+    bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [messages.length, messages.at(-1)?.content, sending]);
 
   const createRoom = async () => {
     setLoading(true);
@@ -211,18 +220,8 @@ export default function GroupChatPage() {
                 </div>
                 {tooFewForRoundtable && <p className="mt-1.5 text-[10px] text-amber-500">Diskusi butuh minimal 2 agent.</p>}
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_180px]">
-                <textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder={roundtable ? "Topik yang mau didiskusikan para agent..." : "Tulis pesan untuk dibahas para agent..."} className="min-h-[88px] rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-                <div className="space-y-2">
-                  <select value={model} onChange={(e) => setModel(e.target.value)} className="h-10 w-full rounded-lg border border-input bg-background px-3 text-xs">
-                    {shownModels.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
-                  </select>
-                  <Button className="h-10 w-full gap-1.5 text-xs" disabled={!room || sending || !input.trim() || selectedAgents.length === 0 || tooFewForRoundtable} onClick={() => void send()}>
-                    {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                    {roundtable ? `Mulai diskusi ${selectedAgents.length} agent` : `Kirim ke ${selectedAgents.length} agent`}
-                  </Button>
-                  <p className="text-[10px] text-muted-foreground">{roundtable ? `Maksimal ${maxRounds} ronde, bisa berhenti lebih cepat.` : "Model berlaku untuk ronde pesan berikutnya."}</p>
-                </div>
+              <div className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-[10px] leading-relaxed text-muted-foreground">
+                Balasan agent muncul di area percakapan. Kolom reply sekarang tetap di bawah supaya kamu tidak perlu bolak-balik scroll setelah diskusi berjalan.
               </div>
             </CardContent>
           </Card>
@@ -231,7 +230,7 @@ export default function GroupChatPage() {
             <CardHeader className="py-3"><CardTitle className="text-sm">Percakapan</CardTitle></CardHeader>
             <CardContent>
               {loading ? <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Memuat room…</div> : (
-                <div className="space-y-3">
+                <div ref={chatScrollRef} className="max-h-[58vh] space-y-3 overflow-y-auto pr-1 pb-3">
                   {messages.map((m, i) => {
                     if (m.kind === "notice") {
                       return (
@@ -276,8 +275,30 @@ export default function GroupChatPage() {
                     );
                   })}
                   {messages.length === 0 && <p className="text-xs text-muted-foreground">Belum ada percakapan di room ini.</p>}
+                  <div ref={bottomRef} />
                 </div>
               )}
+
+              <div className="sticky bottom-0 z-10 mt-3 border-t border-border bg-card/95 pt-3 backdrop-blur supports-[backdrop-filter]:bg-card/80">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_180px]">
+                  <textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder={roundtable ? "Topik yang mau didiskusikan para agent..." : "Tulis pesan untuk dibahas para agent..."}
+                    className="min-h-[88px] rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                  />
+                  <div className="space-y-2">
+                    <select value={model} onChange={(e) => setModel(e.target.value)} className="h-10 w-full rounded-lg border border-input bg-background px-3 text-xs">
+                      {shownModels.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
+                    </select>
+                    <Button className="h-10 w-full gap-1.5 text-xs" disabled={!room || sending || !input.trim() || selectedAgents.length === 0 || tooFewForRoundtable} onClick={() => void send()}>
+                      {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                      {roundtable ? `Mulai diskusi ${selectedAgents.length} agent` : `Kirim ke ${selectedAgents.length} agent`}
+                    </Button>
+                    <p className="text-[10px] text-muted-foreground">{roundtable ? `Maksimal ${maxRounds} ronde, bisa berhenti lebih cepat.` : "Model berlaku untuk ronde pesan berikutnya."}</p>
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
