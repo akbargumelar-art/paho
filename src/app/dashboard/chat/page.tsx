@@ -15,7 +15,8 @@ type AgentId = "corla" | "oca" | "gadis" | "priska" | "bunga";
 type ProjectDomain = "general" | "work" | "personal" | "business";
 
 type Agent = { id: AgentId; name: string; label: string; domain: string; tone: string };
-type ChatMessage = { id: string; role: "user" | "assistant"; content: string; createdAt: string };
+type ChatAttachment = { id: string; name: string; type: string; size: number; path: string; createdAt: string };
+type ChatMessage = { id: string; role: "user" | "assistant"; content: string; createdAt: string; attachments?: ChatAttachment[] };
 type UploadedFile = { id: string; name: string; type: string; size: number; path: string; uploadedAt: string; extractedChars: number };
 type ChatProject = {
   id: string;
@@ -73,6 +74,7 @@ function normalizeProject(value: string | null) {
 function domainLabel(domain: ProjectDomain) {
   return domain === "work" ? "Work" : domain === "personal" ? "Personal" : domain === "business" ? "Bisnis" : "General";
 }
+function attachmentUrl(id: string) { return `/api/chat/attachments/${encodeURIComponent(id)}`; }
 
 export default function ChatPage() {
   const [agents, setAgents] = useState<Agent[]>(fallbackAgents);
@@ -503,6 +505,7 @@ export default function ChatPage() {
                   {message.role === "assistant" && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><CurrentIcon className={cn("h-4 w-4", currentAgent.tone)} /></div>}
                   <div className={cn("max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm", message.role === "user" ? "bg-primary text-primary-foreground" : "border border-border bg-card text-card-foreground")}>
                     <div className="whitespace-pre-wrap">{message.content}</div>
+                    {Boolean(message.attachments?.length) && <div className="mt-3 flex flex-col gap-2">{message.attachments?.map((file) => <a key={file.id} href={attachmentUrl(file.id)} className="rounded-lg border border-border bg-background/60 px-3 py-2 text-xs font-medium text-primary hover:bg-background" download>{file.name} · {(file.size / 1024).toFixed(1)} KB · Download</a>)}</div>}
                     <div className={cn("mt-2 text-[10px] opacity-60", message.role === "user" ? "text-right" : "text-left")}>{new Date(message.createdAt).toLocaleTimeString()}</div>
                   </div>
                   {message.role === "user" && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-slate-100"><User className="h-4 w-4" /></div>}

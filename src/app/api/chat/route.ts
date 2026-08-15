@@ -5,6 +5,8 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 
 import { getAuthSession, unauthorized } from "@/lib/api-auth";
+import { extractAndSaveChatAttachments } from "@/lib/chat-attachments";
+import type { ChatAttachment } from "@/lib/chat-attachments";
 import {
   buildProjectIndex,
   deleteThreadSummary,
@@ -43,6 +45,7 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   createdAt: string;
+  attachments?: ChatAttachment[];
 };
 
 type ChatStore = {
@@ -302,6 +305,7 @@ async function buildPrompt(agent: AgentConfig, project: ChatProject | null, hist
     "",
     "Konteks UI: ini adalah web chat Paho yang dikelompokkan berdasarkan Agent Map. Mode ini fokus chat biasa; jangan klaim sudah menjalankan tool/backend kecuali memang eksplisit tersedia di chat ini.",
     "Jawab natural seperti Claude/AI chat umum: langsung, jelas, tidak bertele-tele.",
+    "Jika user meminta file yang bisa di-download, sertakan isi file dalam blok: ```file: nama-file.ext\\nISI FILE\\n``` . Paho akan otomatis membuat attachment download dari blok itu. Jangan hanya menyimpan file ke path VPS.",
   ];
 
   if (project) {
@@ -531,11 +535,13 @@ export async function POST(req: Request) {
   try {
     const promptWithContext = await buildPrompt(agent, project, store.messages, prompt, threadId);
     const reply = await askHermes(agent, promptWithContext);
+    const attachmentResult = await extractAndSaveChatAttachments(reply, { projectId: activeProjectId, threadId });
     const assistantMessage: ChatMessage = {
       id: id(),
       role: "assistant",
-      content: reply,
+      content: attachmentResult.content,
       createdAt: nowIso(),
+      attachments: attachmentResult.attachments,
     };
 
     const nextMessages = [...store.messages, userMessage, assistantMessage];
