@@ -5,6 +5,20 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 
 import { getAuthSession, unauthorized } from "@/lib/api-auth";
+import {
+  buildProjectIndex,
+  deleteThreadSummary,
+  formatProjectMemory,
+  formatRetrievedContext,
+  makeThreadSummary,
+  needsSummarization,
+  readIndex,
+  readProjectMemory,
+  readThreadSummary,
+  retrieveChunks,
+  saveThreadSummary,
+} from "@/lib/memory-layer";
+import type { ThreadSummary } from "@/lib/memory-layer";
 
 type AgentId = "corla" | "oca" | "gadis" | "priska" | "bunga";
 type ProjectDomain = "general" | "work" | "personal" | "business";
@@ -279,7 +293,7 @@ function clampText(value: string, max: number) {
   return `${text.slice(0, max)}\n\n[...dipotong ${text.length - max} karakter agar prompt tetap ringan...]`;
 }
 
-function buildPrompt(agent: AgentConfig, project: ChatProject | null, history: ChatMessage[], prompt: string) {
+async function buildPrompt(agent: AgentConfig, project: ChatProject | null, history: ChatMessage[], prompt: string, threadId = "") {
   const intro = [
     agent.systemPrompt,
     "",
@@ -288,20 +302,35 @@ function buildPrompt(agent: AgentConfig, project: ChatProject | null, history: C
   ];
 
   if (project) {
+    let index = await readIndex(project.id);
+    if (!index) {
+      index = await buildProjectIndex(project.id, {
+        instruction: project.instruction,
+        knowledge: project.knowledge,
+        uploadedFiles: project.uploadedFiles,
+      });
+    }
+    const memory = await readProjectMemory(project.id);
+    const retrieved = retrieveChunks(index, prompt);
     intro.push(
       "",
       "=== PROJECT CONTEXT AKTIF ===",
       `Nama project: ${project.title}`,
       `Domain project: ${project.domain}`,
-      "Instruksi project:",
-      clampText(project.instruction || "(belum ada instruksi khusus)", 6_000),
-      "Knowledge / catatan project:",
-      clampText(project.knowledge || "(belum ada knowledge khusus)", 18_000),
+      "Memory project tersimpan:",
+      formatProjectMemory(memory),
+      "Konteks yang diambil karena relevan dengan pertanyaan ini:",
+      formatRetrievedContext(retrieved),
       "=== END PROJECT CONTEXT ==="
     );
   }
 
-  intro.push("", "Riwayat percakapan terakhir untuk agent + project ini:");
+  const summary = threadId ? await readThreadSummary(threadId) : null;
+  if (summary?.summary) {
+    intro.push("", "Ringkasan riwayat percakapan sebelumnya:", clampText(summary.summary, 2_500));
+  }
+
+  intro.push("", "Pesan terakhir percakapan ini:");
 
   const recent = history.slice(-8).flatMap((m) => [
     `${m.role === "user" ? "User" : agent.name}:`,
@@ -434,7 +463,8 @@ export async function POST(req: Request) {
   };
 
   try {
-    const reply = await askHermes(agent, buildPrompt(agent, project, store.messages, prompt));
+    const promptWithContext = await buildPrompt(agent, project, store.messages, prompt, threadId);
+    const reply = await askHermes(agent, promptWithContext);
     const assistantMessage: ChatMessage = {
       id: id(),
       role: "assistant",
@@ -445,6 +475,21 @@ export async function POST(req: Request) {
     const nextMessages = [...store.messages, userMessage, assistantMessage];
     await saveStore(agentId, activeProjectId, threadId, { messages: nextMessages });
     const thread = await touchThread(threadId, prompt);
+
+    // Summarization trigger
+    const summary = await readThreadSummary(threadId);
+    if (needsSummarization(nextMessages.length, summary)) {
+      const newSummary: ThreadSummary = {
+        threadId,
+        summary: makeThreadSummary(nextMessages),
+        messageCount: nextMessages.length,
+        generatedAt: nowIso(),
+      };
+      await saveThreadSummary(newSummary);
+      // Keep memory compact by deleting old ones after new saved
+      await deleteThreadSummary(threadId).catch(() => undefined);
+      await saveThreadSummary(newSummary);
+    }
 
     return NextResponse.json({
       ok: true,

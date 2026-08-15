@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "fs/promises";
 import path from "path";
 
 import { getAuthSession, unauthorized } from "@/lib/api-auth";
+import { buildProjectIndex, deleteAllProjectData } from "@/lib/memory-layer";
 
 type ProjectDomain = "general" | "work" | "personal" | "business";
 type ProjectStatus = "active" | "archived";
@@ -163,6 +164,12 @@ export async function PUT(req: Request) {
 
   if (!found) return NextResponse.json({ error: "Project tidak ditemukan." }, { status: 404 });
   await saveStore({ projects });
+  const savedProject = found as ChatProject;
+  await buildProjectIndex(savedProject.id, {
+    instruction: savedProject.instruction,
+    knowledge: savedProject.knowledge,
+    uploadedFiles: savedProject.uploadedFiles,
+  }).catch(() => undefined);
   return NextResponse.json({ project: found, projects });
 }
 
@@ -181,5 +188,6 @@ export async function DELETE(req: Request) {
   const projects = store.projects.filter((project) => project.id !== id);
   await saveStore({ projects });
   await rm(path.join(UPLOAD_DIR, id), { recursive: true, force: true }).catch(() => undefined);
+  await deleteAllProjectData(id).catch(() => undefined);
   return NextResponse.json({ ok: true, project: target, projects });
 }

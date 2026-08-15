@@ -19,6 +19,8 @@ type UploadedFile = { id: string; name: string; type: string; size: number; path
 type ChatProject = { id: string; title: string; domain: ProjectDomain; status?: "active" | "archived"; instruction: string; knowledge: string; uploadedFiles?: UploadedFile[]; createdAt: string; updatedAt: string };
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string; createdAt: string };
 type ChatThread = { id: string; title: string; agentId: AgentId; projectId: string; status?: "active" | "archived"; createdAt: string; updatedAt: string };
+type ProjectMemory = { summary: string; facts: string[]; decisions: string[]; todos: string[]; preferences: string[] };
+type MemoryStats = { chunkCount: number; totalTokensEstimate: number; sources: string[]; updatedAt: string } | null;
 
 const fallbackAgents: Agent[] = [
   { id: "corla", name: "Corla", label: "Core coordinator", domain: "Lintas domain", tone: "text-hermes" },
@@ -57,6 +59,11 @@ export default function ProjectContextDetailPage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [contextExpanded, setContextExpanded] = useState(false);
+  const [memoryExpanded, setMemoryExpanded] = useState(false);
+  const [memory, setMemory] = useState<ProjectMemory | null>(null);
+  const [memoryStats, setMemoryStats] = useState<MemoryStats>(null);
+  const [analysisQuestion, setAnalysisQuestion] = useState("");
+  const [analysisJob, setAnalysisJob] = useState<{ id: string; status: string; result?: string; error?: string } | null>(null);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -100,6 +107,7 @@ export default function ProjectContextDetailPage() {
   };
 
   useEffect(() => { void loadProject(); }, [projectId]);
+  useEffect(() => { void fetchMemory(); }, [projectId]);
   useEffect(() => {
     if (!project) return;
     setActiveThreadId("");
@@ -117,6 +125,7 @@ export default function ProjectContextDetailPage() {
       const data = await readJson(res);
       if (!res.ok) throw new Error(data?.error || "Gagal menyimpan project.");
       setProject(data.project);
+      void fetchMemory();
     } catch (err) { setError((err as Error).message); }
     finally { setSaving(false); }
   };
@@ -133,6 +142,7 @@ export default function ProjectContextDetailPage() {
       const data = await readJson(res);
       if (!res.ok) throw new Error(data?.error || "Gagal upload file context.");
       setProject(data.project);
+      void fetchMemory();
     } catch (err) { setError((err as Error).message); }
     finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = ""; }
   };
@@ -175,6 +185,48 @@ export default function ProjectContextDetailPage() {
     const res = await fetch(`/api/chat?${qs.toString()}`, { method: "DELETE" });
     if (!res.ok) return setError("Gagal reset chat.");
     setMessages([]);
+  };
+
+  const fetchMemory = async () => {
+    if (!projectId) return;
+    const res = await fetch(`/api/chat/memory?projectId=${encodeURIComponent(projectId)}`);
+    const data = await readJson(res);
+    if (!res.ok) return;
+    setMemory(data.memory);
+    setMemoryStats(data.index);
+  };
+
+  const saveMemory = async () => {
+    if (!memory) return;
+    const res = await fetch("/api/chat/memory", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, ...memory }),
+    });
+    const data = await readJson(res);
+    if (!res.ok) return setError(data?.error || "Gagal menyimpan memory.");
+    setMemory(data.memory);
+  };
+
+  const startDeepAnalysis = async () => {
+    if (!project || !analysisQuestion.trim()) return;
+    setError("");
+    const res = await fetch("/api/chat/analysis", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: project.id, question: analysisQuestion, profile: activeAgent === "corla" || activeAgent === "oca" ? undefined : activeAgent }),
+    });
+    const data = await readJson(res);
+    if (!res.ok) return setError(data?.error || "Gagal memulai deep analysis.");
+    setAnalysisJob(data.job);
+  };
+
+  const pollAnalysis = async () => {
+    if (!analysisJob?.id) return;
+    const res = await fetch(`/api/chat/analysis?jobId=${encodeURIComponent(analysisJob.id)}`);
+    const data = await readJson(res);
+    if (!res.ok) return setError(data?.error || "Gagal cek deep analysis.");
+    setAnalysisJob(data.job);
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -223,6 +275,31 @@ export default function ProjectContextDetailPage() {
                   <input ref={fileInputRef} type="file" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadFile(file); }} accept=".txt,.md,.markdown,.pdf,.csv,.json,.log,.yaml,.yml,.xml,.html,.png,.jpg,.jpeg,.webp,.tif,.tiff,text/*,application/pdf,image/*" />
                   <Button variant="outline" className="w-full" onClick={() => fileInputRef.current?.click()} disabled={uploading || project.status === "archived"}>{uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Paperclip className="mr-2 h-4 w-4" />}Upload file</Button>
                   {(project.uploadedFiles?.length || 0) === 0 ? <p className="text-xs text-muted-foreground">Belum ada file context.</p> : <div className="max-h-48 space-y-2 overflow-y-auto">{project.uploadedFiles?.map((file) => <div key={file.id} className="rounded-md border border-border px-3 py-2 text-xs"><div className="flex items-center gap-2 font-medium"><FileText className="h-3.5 w-3.5" /><span className="truncate">{file.name}</span></div><div className="mt-1 text-muted-foreground">{Math.ceil(file.size / 1024)} KB · {file.extractedChars.toLocaleString()} karakter</div></div>)}</div>}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="shrink-0 border-sky-500/20 bg-card/80">
+          <CardContent className="space-y-3 p-3">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2 text-sm font-semibold"><FolderKanban className="h-4 w-4 text-sky-400" />Project Memory <Badge variant="outline">{memoryStats?.chunkCount || 0} chunk</Badge><Badge variant="secondary">~{memoryStats?.totalTokensEstimate || 0} token</Badge></div>
+                <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{memory?.summary || "Belum ada ringkasan memory project."}</p>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => setMemoryExpanded((value) => !value)}>{memoryExpanded ? "Collapse" : "Expand memory"}</Button><Button variant="outline" size="sm" onClick={saveMemory} disabled={!memory}>Simpan memory</Button><Button variant="outline" size="sm" onClick={pollAnalysis} disabled={!analysisJob?.id}>Refresh analysis</Button></div>
+            </div>
+            {memoryExpanded && (
+              <div className="grid gap-4 border-t border-border pt-3 xl:grid-cols-[1fr_320px]">
+                <div className="space-y-3">
+                  <div className="space-y-2"><Label>Ringkasan memory</Label><Textarea className="min-h-24" value={memory?.summary || ""} onChange={(e) => setMemory((prev) => ({ summary: e.target.value, facts: prev?.facts || [], decisions: prev?.decisions || [], todos: prev?.todos || [], preferences: prev?.preferences || [] }))} /></div>
+                  <div className="grid gap-3 md:grid-cols-2 text-xs text-muted-foreground"><div><span className="font-medium text-foreground">Facts:</span><div>{(memory?.facts || []).length} item</div></div><div><span className="font-medium text-foreground">Decisions:</span><div>{(memory?.decisions || []).length} item</div></div><div><span className="font-medium text-foreground">Todos:</span><div>{(memory?.todos || []).length} item</div></div><div><span className="font-medium text-foreground">Sources:</span><div className="line-clamp-2">{(memoryStats?.sources || []).join(", ") || "-"}</div></div></div>
+                </div>
+                <div className="space-y-3">
+                  <div className="space-y-2"><Label>Deep analysis</Label><Textarea className="min-h-24" value={analysisQuestion} onChange={(e) => setAnalysisQuestion(e.target.value)} placeholder="Misal: susun PRD lengkap dari seluruh context project ini" /></div>
+                  <Button className="w-full" variant="outline" onClick={startDeepAnalysis} disabled={!analysisQuestion.trim()}>Mulai deep analysis async</Button>
+                  {analysisJob && <div className="rounded-md border border-border p-3 text-xs"><div><span className="font-medium">Job:</span> {analysisJob.id}</div><div><span className="font-medium">Status:</span> {analysisJob.status}</div>{analysisJob.result && <div className="mt-2 whitespace-pre-wrap text-foreground">{analysisJob.result.slice(0, 1200)}</div>}{analysisJob.error && <div className="mt-2 whitespace-pre-wrap text-destructive">{analysisJob.error}</div>}</div>}
                 </div>
               </div>
             )}

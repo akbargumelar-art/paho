@@ -5,6 +5,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 
 import { getAuthSession, unauthorized } from "@/lib/api-auth";
+import { buildProjectIndex } from "@/lib/memory-layer";
 
 type UploadedFile = {
   id: string;
@@ -187,6 +188,11 @@ export async function POST(req: Request) {
   );
   const updated = projects.find((item) => item.id === projectId)!;
   await saveStore({ projects });
+  await buildProjectIndex(projectId, {
+    instruction: updated.instruction,
+    knowledge: updated.knowledge,
+    uploadedFiles: updated.uploadedFiles,
+  }).catch(() => undefined);
 
     return NextResponse.json({
       ok: true,
