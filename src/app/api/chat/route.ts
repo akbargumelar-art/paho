@@ -10,15 +10,18 @@ import {
   deleteThreadSummary,
   formatProjectMemory,
   formatRetrievedContext,
+  mergeMemory,
   makeThreadSummary,
   needsSummarization,
+  parseMemoryExtraction,
   readIndex,
   readProjectMemory,
   readThreadSummary,
   retrieveChunks,
+  saveProjectMemory,
   saveThreadSummary,
 } from "@/lib/memory-layer";
-import type { ThreadSummary } from "@/lib/memory-layer";
+import type { ProjectMemory, ThreadSummary } from "@/lib/memory-layer";
 
 type AgentId = "corla" | "oca" | "gadis" | "priska" | "bunga";
 type ProjectDomain = "general" | "work" | "personal" | "business";
@@ -393,6 +396,69 @@ async function askHermes(agent: AgentConfig, prompt: string) {
   }
 }
 
+const MEMORY_EXTRACT_EVERY = 6;
+
+function shouldExtractMemory(messageCount: number, memory: ProjectMemory) {
+  const lastCount = Number((memory as ProjectMemory & { lastExtractCount?: number }).lastExtractCount || 0);
+  return messageCount - lastCount >= MEMORY_EXTRACT_EVERY;
+}
+
+/**
+ * Fire-and-forget memory extraction: reads recent conversation, asks Hermes for
+ * a compact JSON memory delta, then merges it into project memory.
+ */
+function extractProjectMemoryInBackground(agent: AgentConfig, projectId: string, messages: ChatMessage[]) {
+  const transcript = messages
+    .slice(-12)
+    .map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${clampText(message.content, 700)}`)
+    .join("\n");
+
+  const prompt = [
+    "Tugas kamu HANYA mengekstrak memory project dari percakapan berikut.",
+    "Balas HANYA JSON valid tanpa penjelasan tambahan, dengan bentuk:",
+    '{"summary": "...", "facts": ["..."], "decisions": ["..."], "todos": ["..."], "preferences": ["..."]}',
+    "Aturan:",
+    "- summary maksimal 3 kalimat.",
+    "- facts hanya fakta teknis/keputusan konkret yang stabil.",
+    "- decisions hanya keputusan final yang disepakati.",
+    "- todos hanya tugas yang belum selesai.",
+    "- preferences hanya preferensi gaya kerja/komunikasi user.",
+    "- Jika sebuah kategori tidak ada isinya, kembalikan array kosong.",
+    "",
+    "Percakapan:",
+    transcript,
+  ].join("\n");
+
+  const args = agent.profile
+    ? ["--profile", agent.profile, "chat", "-q", prompt, "-m", CHAT_MODEL, "-Q"]
+    : ["chat", "-q", prompt, "-m", CHAT_MODEL, "-Q"];
+
+  const child = execFile(
+    HERMES_BIN,
+    args,
+    {
+      timeout: 180_000,
+      maxBuffer: 1024 * 1024,
+      env: { ...process.env, PATH: `/root/.nvm/versions/node/v24.19.0/bin:${process.env.PATH || ""}` },
+    },
+    async (error, stdout, stderr) => {
+      if (error) return;
+      const parsed = parseMemoryExtraction(cleanHermesOutput(stdout || stderr || ""));
+      if (!parsed || Object.keys(parsed).length === 0) return;
+      try {
+        const previous = await readProjectMemory(projectId);
+        const merged = mergeMemory(previous, parsed) as ProjectMemory & { lastExtractCount?: number };
+        merged.lastExtractCount = messages.length;
+        merged.lastSummarizedAt = nowIso();
+        await saveProjectMemory(merged);
+      } catch {
+        // memory extraction must never break the chat flow
+      }
+    }
+  );
+  child.unref?.();
+}
+
 export async function GET(req: Request) {
   const session = await getAuthSession();
   if (!session) return unauthorized();
@@ -489,6 +555,13 @@ export async function POST(req: Request) {
       // Keep memory compact by deleting old ones after new saved
       await deleteThreadSummary(threadId).catch(() => undefined);
       await saveThreadSummary(newSummary);
+    }
+
+    if (project) {
+      const memory = await readProjectMemory(activeProjectId);
+      if (shouldExtractMemory(nextMessages.length, memory)) {
+        extractProjectMemoryInBackground(agent, activeProjectId, nextMessages);
+      }
     }
 
     return NextResponse.json({

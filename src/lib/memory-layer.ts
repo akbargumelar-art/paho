@@ -10,7 +10,7 @@
  * - Async deep analysis mode.
  */
 
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "fs/promises";
+import { mkdir, readFile, rm, writeFile } from "fs/promises";
 import path from "path";
 
 // ── Types ───────────────────────────────────────────────
@@ -367,6 +367,58 @@ export function makeThreadSummary(messages: ChatMessage[]): string {
     return `${speaker}: ${clampText(message.content, 360).replace(/\s+/g, " ")}`;
   });
   return clampText(lines.join("\n"), 3_500);
+}
+
+function dedupeList(items: string[], max = 60): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of items) {
+    const item = String(raw || "").trim().slice(0, 400);
+    if (!item) continue;
+    const key = item.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/**
+ * Merge newly extracted memory items into existing ones (dedupe, newest first).
+ */
+export function mergeMemory(prev: ProjectMemory, next: Partial<ProjectMemory>): ProjectMemory {
+  return {
+    projectId: prev.projectId,
+    summary: String(next.summary ?? prev.summary ?? "").trim().slice(0, 8_000),
+    facts: dedupeList([...(next.facts || []), ...(prev.facts || [])]),
+    decisions: dedupeList([...(next.decisions || []), ...(prev.decisions || [])]),
+    todos: dedupeList([...(next.todos || []), ...(prev.todos || [])]),
+    preferences: dedupeList([...(next.preferences || []), ...(prev.preferences || [])]),
+    lastSummarizedAt: next.lastSummarizedAt || prev.lastSummarizedAt,
+    updatedAt: nowIso(),
+  };
+}
+
+/**
+ * Parse a JSON block from LLM extraction output (tolerates markdown fences).
+ */
+export function parseMemoryExtraction(raw: string): Partial<ProjectMemory> {
+  const cleaned = raw.replace(/```json/gi, "```").trim();
+  const fence = cleaned.match(/```([\s\S]*?)```/);
+  const candidate = fence ? fence[1].trim() : cleaned;
+  try {
+    const parsed = JSON.parse(candidate) as Record<string, unknown>;
+    return {
+      summary: typeof parsed.summary === "string" ? parsed.summary : undefined,
+      facts: Array.isArray(parsed.facts) ? parsed.facts.map(String) : undefined,
+      decisions: Array.isArray(parsed.decisions) ? parsed.decisions.map(String) : undefined,
+      todos: Array.isArray(parsed.todos) ? parsed.todos.map(String) : undefined,
+      preferences: Array.isArray(parsed.preferences) ? parsed.preferences.map(String) : undefined,
+    };
+  } catch {
+    return {};
+  }
 }
 
 // ── Cleanup helpers ──────────────────────────────────────
