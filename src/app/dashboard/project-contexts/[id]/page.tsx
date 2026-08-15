@@ -161,6 +161,11 @@ export default function ProjectContextDetailPage() {
     await fetchHistory(activeAgent, data.thread.id).catch((err) => setError((err as Error).message));
   };
 
+  const selectThread = (threadId: string) => {
+    setActiveThreadId(threadId);
+    void fetchHistory(activeAgent, threadId).catch((err) => setError((err as Error).message));
+  };
+
   const sendMessage = async (event?: FormEvent) => {
     event?.preventDefault();
     const text = input.trim();
@@ -311,11 +316,25 @@ export default function ProjectContextDetailPage() {
           </CardContent>
         </Card>
 
+        <Card className="shrink-0 border-sky-500/20 bg-card/80 md:hidden">
+          <CardContent className="space-y-2 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-xs font-semibold text-muted-foreground">Lanjut chat sebelumnya</Label>
+              <Badge variant="outline">{threads.length} chat</Badge>
+            </div>
+            <select value={activeThreadId} onChange={(event) => selectThread(event.target.value)} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm">
+              <option value="">Percakapan aktif / chat baru</option>
+              {threads.map((thread) => <option key={thread.id} value={thread.id}>{thread.title}</option>)}
+            </select>
+            <p className="text-[11px] text-muted-foreground">Pilih riwayat chat project untuk melanjutkan percakapan lama.</p>
+          </CardContent>
+        </Card>
+
         <Card className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-950/40">
           <CardHeader className="border-b border-border/70 py-3">
             <CardTitle className="flex flex-wrap items-center justify-between gap-3 text-sm font-medium text-muted-foreground">
               <span className="flex items-center gap-2"><CurrentIcon className={cn("h-4 w-4", currentAgent.tone)} />{currentAgent.name} · {project.title} · {messages.length ? `${messages.length} pesan` : "Percakapan baru"}</span>
-              <select value={activeThreadId} onChange={(event) => { setActiveThreadId(event.target.value); void fetchHistory(activeAgent, event.target.value).catch((err) => setError((err as Error).message)); }} className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs md:w-72"><option value="">Current / legacy chat</option>{threads.map((thread) => <option key={thread.id} value={thread.id}>{thread.title}</option>)}</select>
+              <select value={activeThreadId} onChange={(event) => selectThread(event.target.value)} className="hidden h-9 w-full rounded-md border border-input bg-background px-3 text-xs md:block md:w-72"><option value="">Percakapan aktif / baru</option>{threads.map((thread) => <option key={thread.id} value={thread.id}>{thread.title}</option>)}</select>
             </CardTitle>
           </CardHeader>
           <CardContent className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
