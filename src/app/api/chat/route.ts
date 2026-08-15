@@ -46,6 +46,8 @@ type ChatMessage = {
   createdAt: string;
   attachments?: ChatAttachment[];
   pending?: boolean;
+  /** Model actually used for this reply, so a mixed-model thread stays auditable. */
+  model?: string;
   error?: boolean;
 };
 
@@ -374,8 +376,8 @@ function cleanHermesOutput(raw: string) {
  * persist partial text while generation is still in flight. Uses `spawn`
  * instead of `execFile` because we need incremental output, not a final buffer.
  */
-async function askHermes(agent: AgentConfig, prompt: string, onPartial?: (text: string) => void) {
-  const args = ["chat", "-q", prompt, "-m", CHAT_MODEL, "-Q"];
+async function askHermes(agent: AgentConfig, prompt: string, onPartial?: (text: string) => void, model?: string) {
+  const args = ["chat", "-q", prompt, "-m", model || CHAT_MODEL, "-Q"];
   if (agent.profile) {
     args.unshift("--profile", agent.profile);
   }
@@ -454,6 +456,8 @@ type ChatJob = {
   threadId: string;
   prompt: string;
   assistantId: string;
+  /** Per-message model override; empty means the Paho default. */
+  model?: string;
   status: "pending" | "running" | "done" | "error";
   attempts: number;
   createdAt: string;
@@ -582,7 +586,7 @@ async function runJob(job: ChatJob) {
       if (now - lastFlush < 900) return;
       lastFlush = now;
       void flushPartial();
-    });
+    }, job.model);
     // Flush the final streamed snapshot before replacing pending=true.
     latestPartial = reply;
     await flushPartial();
@@ -592,6 +596,7 @@ async function runJob(job: ChatJob) {
       content: attachmentResult.content,
       attachments: attachmentResult.attachments,
       error: false,
+      model: job.model || CHAT_MODEL,
       createdAt: nowIso(),
     });
 
@@ -756,6 +761,10 @@ export async function POST(req: Request) {
   const agent = AGENTS[agentId];
   const project = await findProject(projectId);
   const prompt = String(body?.message || "").trim();
+  // Per-message model override. Validated loosely (charset only) because the
+  // authoritative list comes from the router and can change any time.
+  const rawModel = String(body?.model || "").trim();
+  const model = /^[A-Za-z0-9._\/-]{1,80}$/.test(rawModel) ? rawModel : "";
 
   if (projectId !== "none" && !project) return NextResponse.json({ error: "Project tidak ditemukan." }, { status: 404 });
   if (!prompt) return NextResponse.json({ error: "Pesan kosong." }, { status: 400 });
@@ -787,6 +796,7 @@ export async function POST(req: Request) {
       content: "",
       createdAt: nowIso(),
       pending: true,
+      model: model || CHAT_MODEL,
     };
     const nextMessages = [...store.messages, userMessage, assistantMessage];
     await saveStore(agentId, activeProjectId, threadId, { messages: nextMessages });
@@ -802,6 +812,7 @@ export async function POST(req: Request) {
       threadId,
       prompt,
       assistantId: assistantMessage.id,
+      model,
       status: "pending",
       attempts: 0,
       createdAt: nowIso(),

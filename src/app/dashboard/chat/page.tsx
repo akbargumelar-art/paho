@@ -18,7 +18,8 @@ type ProjectDomain = "general" | "work" | "personal" | "business";
 
 type Agent = { id: AgentId; name: string; label: string; domain: string; tone: string };
 type ChatAttachment = { id: string; name: string; type: string; size: number; path: string; createdAt: string };
-type ChatMessage = { id: string; role: "user" | "assistant"; content: string; createdAt: string; attachments?: ChatAttachment[]; pending?: boolean; error?: boolean };
+type ChatMessage = { id: string; role: "user" | "assistant"; content: string; createdAt: string; attachments?: ChatAttachment[]; pending?: boolean; error?: boolean; model?: string };
+type ModelOption = { id: string; family: string; featured: boolean };
 type UploadedFile = { id: string; name: string; type: string; size: number; path: string; uploadedAt: string; extractedChars: number };
 type ChatProject = {
   id: string;
@@ -101,6 +102,9 @@ export default function ChatPage() {
   const [projectForm, setProjectForm] = useState<ProjectForm>(emptyForm);
   const [uploading, setUploading] = useState(false);
   const [pending, setPending] = useState(false);
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [activeModel, setActiveModel] = useState("hermes");
+  const [showAllModels, setShowAllModels] = useState(false);
   const voice = useVoiceInput((text) => setInput((prev) => (prev ? `${prev} ${text}` : text)));
   const playback = useVoicePlayback();
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -129,6 +133,25 @@ export default function ChatPage() {
   useEffect(() => {
     void fetchProjects(activeProjectId);
   }, [showArchivedProjects]);
+
+  // Load the model list once; remember the last picked model across visits.
+  useEffect(() => {
+    const saved = window.localStorage.getItem("paho-chat-model");
+    if (saved) setActiveModel(saved);
+    void (async () => {
+      try {
+        const res = await fetch("/api/chat/models");
+        const data = await res.json();
+        setModels(Array.isArray(data.models) ? data.models : []);
+      } catch {
+        setModels([{ id: "hermes", family: "Hermes", featured: true }]);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("paho-chat-model", activeModel);
+  }, [activeModel]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -341,7 +364,7 @@ export default function ChatPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent: activeAgent, projectId: activeProjectId, threadId: activeThreadId, message: text }),
+        body: JSON.stringify({ agent: activeAgent, projectId: activeProjectId, threadId: activeThreadId, message: text, model: activeModel }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Gagal mengirim pesan.");
@@ -536,6 +559,9 @@ export default function ChatPage() {
                     {Boolean(message.attachments?.length) && <div className="mt-3 flex flex-col gap-2">{message.attachments?.map((file) => <div key={file.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-foreground">{file.name}</span><span className="text-[11px] text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</span><button type="button" onClick={() => setViewerFile({ id: file.id, name: file.name, size: file.size })} className="rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:opacity-90">Lihat</button><a href={attachmentUrl(file.id)} download={file.name} className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-primary hover:bg-background">Download</a></div>)}</div>}
                     <div className={cn("mt-2 flex items-center gap-2 text-[10px] opacity-60", message.role === "user" ? "justify-end" : "justify-start")}>
                       <span>{new Date(message.createdAt).toLocaleTimeString()}</span>
+                      {message.role === "assistant" && message.model && (
+                        <span className="rounded bg-background/70 px-1 py-0.5 font-mono text-[9px]">{message.model}</span>
+                      )}
                       {message.role === "assistant" && !message.pending && message.content && (
                         <button
                           type="button"
@@ -560,6 +586,26 @@ export default function ChatPage() {
       </Card>
 
       <form onSubmit={sendMessage} className="rounded-2xl border border-border bg-card p-3 shadow-lg">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Model</span>
+          <select
+            value={activeModel}
+            onChange={(event) => setActiveModel(event.target.value)}
+            className="h-8 min-w-0 max-w-[60%] flex-1 rounded-lg border border-input bg-background px-2 text-xs sm:max-w-xs"
+            disabled={loading}
+            title="Model untuk pesan berikutnya"
+          >
+            {(showAllModels ? models : models.filter((model) => model.featured || model.id === activeModel)).map((model) => (
+              <option key={model.id} value={model.id}>{model.id}</option>
+            ))}
+          </select>
+          {models.length > 1 && (
+            <button type="button" onClick={() => setShowAllModels((s) => !s)} className="text-[10px] text-primary underline-offset-2 hover:underline">
+              {showAllModels ? "unggulan saja" : `semua (${models.length})`}
+            </button>
+          )}
+          <span className="ml-auto text-[10px] text-muted-foreground">bisa ganti kapan saja</span>
+        </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
           <div className="min-w-0 flex-1">
             <Textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={onKeyDown} placeholder={`Tulis pesan untuk ${currentAgent.name}${currentProject ? ` di project ${currentProject.title}` : ""}...`} className="max-h-48 min-h-[52px] w-full resize-none border-0 bg-transparent focus-visible:ring-0" disabled={loading} />
