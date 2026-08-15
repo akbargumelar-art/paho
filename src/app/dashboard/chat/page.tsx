@@ -81,6 +81,50 @@ function domainLabel(domain: ProjectDomain) {
 function attachmentUrl(id: string) { return `/api/chat/attachments/${encodeURIComponent(id)}`; }
 type ViewerFile = { id: string; name: string; size: number };
 
+/**
+ * Word-by-word renderer for a message that was observed while pending.
+ *
+ * Important: the component stays mounted when `pending` flips to false. That
+ * lets it finish typing the last partial instead of replacing it with the full
+ * final answer in one frame. Historical messages (first seen as non-pending)
+ * render immediately and are never replayed.
+ */
+function StreamingMessage({ content, pending }: { content: string; pending: boolean }) {
+  const sawPending = useRef(pending);
+  const [shown, setShown] = useState(pending ? "" : content);
+
+  useEffect(() => {
+    if (pending) sawPending.current = true;
+    // Historical/final messages that were never seen pending render at once.
+    if (!sawPending.current) setShown(content);
+  }, [content, pending]);
+
+  useEffect(() => {
+    if (!sawPending.current || shown.length >= content.length) return;
+    const timer = window.setTimeout(() => {
+      const rest = content.slice(shown.length);
+      // Preserve whitespace/newlines exactly; otherwise reveal one word plus
+      // its following spaces, giving a natural typing cadence.
+      const next = rest.match(/^\s+|^\S+\s*/)?.[0] || rest.charAt(0);
+      setShown((current) => current + next);
+    }, 45);
+    return () => window.clearTimeout(timer);
+  }, [content, shown]);
+
+  // Defensive: a retry may replace a partial with shorter text.
+  useEffect(() => {
+    if (shown.length > content.length || !content.startsWith(shown)) setShown(content);
+  }, [content, shown]);
+
+  const typing = pending || shown.length < content.length;
+  return (
+    <div className="whitespace-pre-wrap break-words">
+      {shown}
+      {typing && <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse bg-primary/70" />}
+    </div>
+  );
+}
+
 export default function ChatPage() {
   const [agents, setAgents] = useState<Agent[]>(fallbackAgents);
   const [activeAgent, setActiveAgent] = useState<AgentId>("corla");
@@ -557,16 +601,11 @@ export default function ChatPage() {
                 <div key={message.id} className={cn("flex gap-3", message.role === "user" ? "justify-end" : "justify-start")}>
                   {message.role === "assistant" && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><CurrentIcon className={cn("h-4 w-4", currentAgent.tone)} /></div>}
                   <div className={cn("max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm", message.role === "user" ? "bg-primary text-primary-foreground" : "border border-border bg-card text-card-foreground")}>
-                    {message.pending ? (
-                      message.content ? (
-                        <div className="whitespace-pre-wrap">
-                          {message.content}
-                          <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse bg-primary/70" />
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {currentAgent.name} sedang memproses di server…</div>
-                      )
-                    ) : <div className="whitespace-pre-wrap">{message.content}</div>}
+                    {message.pending && !message.content ? (
+                      <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {currentAgent.name} sedang memproses di server…</div>
+                    ) : (
+                      <StreamingMessage content={message.content} pending={Boolean(message.pending)} />
+                    )}
                     {Boolean(message.attachments?.length) && <div className="mt-3 flex flex-col gap-2">{message.attachments?.map((file) => <div key={file.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-foreground">{file.name}</span><span className="text-[11px] text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</span><button type="button" onClick={() => setViewerFile({ id: file.id, name: file.name, size: file.size })} className="rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:opacity-90">Lihat</button><a href={attachmentUrl(file.id)} download={file.name} className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-primary hover:bg-background">Download</a></div>)}</div>}
                     <div className={cn("mt-2 flex items-center gap-2 text-[10px] opacity-60", message.role === "user" ? "justify-end" : "justify-start")}>
                       <span>{new Date(message.createdAt).toLocaleTimeString()}</span>

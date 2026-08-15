@@ -79,6 +79,18 @@ export function cleanHermesOutput(raw: string): string {
     return collapseBlankLines(body).trim();
   }
 
+  // Streaming non-quiet Hermes prints the prompt first:
+  //   Query: <first line>
+  //   <prompt continuation lines>
+  //   Initializing agent...
+  // There is no assistant text before the answer box opens. If we try to clean
+  // the pre-box buffer, the user's prompt/history leaks into the assistant
+  // bubble and appears as one collapsed line. Keep partial output empty until
+  // the `╭─ Hermes ─╮` answer box exists.
+  if (lines.some((line) => line.trim().startsWith("Query:")) || lines.some((line) => line.trim() === "Initializing agent...")) {
+    return "";
+  }
+
   const filtered = lines.filter((line) => {
     const trimmed = line.trim();
     if (!trimmed) return true;

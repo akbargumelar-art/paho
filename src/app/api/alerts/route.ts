@@ -22,6 +22,36 @@ export const dynamic = "force-dynamic";
 
 const HERMES_CRON_JOBS = process.env.HERMES_CRON_JOBS || "/root/.hermes/cron/jobs.json";
 const SOON_HOURS = 24;
+const READ_STATE_FILE = "/root/paho/data/alerts-read.json";
+
+/**
+ * Dismiss state.
+ *
+ * An alert is derived data — an overdue task stays overdue, so simply
+ * re-deriving on every poll made the badge un-clearable. We therefore persist
+ * which alerts were acknowledged, keyed by alert id plus a SIGNATURE of the
+ * thing that mattered (severity + deadline). If the deadline moves or the
+ * severity worsens the signature changes and the alert legitimately returns.
+ */
+type ReadState = Record<string, string>;
+
+function signatureOf(alert: Alert): string {
+  return `${alert.severity}|${alert.dueAt || "-"}`;
+}
+
+async function readReadState(): Promise<ReadState> {
+  try {
+    const parsed = JSON.parse(await fs.readFile(READ_STATE_FILE, "utf-8"));
+    return parsed && typeof parsed === "object" ? (parsed as ReadState) : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeReadState(state: ReadState) {
+  await fs.mkdir("/root/paho/data", { recursive: true });
+  await fs.writeFile(READ_STATE_FILE, JSON.stringify(state, null, 2));
+}
 
 export type Alert = {
   id: string;
@@ -217,16 +247,65 @@ export async function GET() {
     return at - bt;
   });
 
+  // Split acknowledged items out of the badge count. They remain visible in the
+  // panel (marked read) so nothing silently disappears.
+  const readState = await readReadState();
+  const unread: Alert[] = [];
+  const read: Alert[] = [];
+  for (const alert of alerts) {
+    if (readState[alert.id] === signatureOf(alert)) read.push(alert);
+    else unread.push(alert);
+  }
+
+  // Drop dismiss records whose alert no longer exists, so the file cannot grow
+  // forever after tasks are completed.
+  const liveIds = new Set(alerts.map((a) => a.id));
+  const pruned = Object.fromEntries(Object.entries(readState).filter(([id]) => liveIds.has(id)));
+  if (Object.keys(pruned).length !== Object.keys(readState).length) {
+    await writeReadState(pruned).catch(() => undefined);
+  }
+
   return NextResponse.json({
     generatedAt: now.toISOString(),
     soonWindowHours: SOON_HOURS,
     counts: {
-      total: alerts.length,
-      overdue: alerts.filter((a) => a.severity === "overdue").length,
-      soon: alerts.filter((a) => a.severity === "soon").length,
-      failed: alerts.filter((a) => a.severity === "failed").length,
+      total: unread.length,
+      overdue: unread.filter((a) => a.severity === "overdue").length,
+      soon: unread.filter((a) => a.severity === "soon").length,
+      failed: unread.filter((a) => a.severity === "failed").length,
+      read: read.length,
     },
-    alerts,
+    alerts: unread,
+    readAlerts: read,
     sourceErrors,
   });
+}
+
+/**
+ * Mark alerts as read. Body: { ids: string[] } or { all: true }.
+ * Signatures come from the live derivation so a changed deadline re-alerts.
+ */
+export async function POST(req: Request) {
+  const session = await getAuthSession();
+  if (!session) return unauthorized();
+
+  const body = await req.json().catch(() => ({}));
+  const all = body?.all === true;
+  const ids: string[] = Array.isArray(body?.ids) ? body.ids.map(String) : [];
+  if (!all && ids.length === 0) {
+    return NextResponse.json({ error: "Sertakan ids[] atau all: true." }, { status: 400 });
+  }
+
+  // Re-derive so we store the CURRENT signature, not one the client invented.
+  const current = await GET();
+  if (current.status !== 200) return current;
+  const payload = await current.json();
+  const live: Alert[] = [...(payload.alerts || []), ...(payload.readAlerts || [])];
+
+  const state = await readReadState();
+  const wanted = all ? live : live.filter((a) => ids.includes(a.id));
+  for (const alert of wanted) state[alert.id] = signatureOf(alert);
+  await writeReadState(state);
+
+  return NextResponse.json({ ok: true, marked: wanted.length });
 }
