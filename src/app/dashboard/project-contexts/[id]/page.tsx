@@ -20,7 +20,7 @@ type Agent = { id: AgentId; name: string; label: string; domain: string; tone: s
 type UploadedFile = { id: string; name: string; type: string; size: number; path: string; uploadedAt: string; extractedChars: number };
 type ChatProject = { id: string; title: string; domain: ProjectDomain; status?: "active" | "archived"; instruction: string; knowledge: string; uploadedFiles?: UploadedFile[]; createdAt: string; updatedAt: string };
 type ChatAttachment = { id: string; name: string; type: string; size: number; path: string; createdAt: string };
-type ChatMessage = { id: string; role: "user" | "assistant"; content: string; createdAt: string; attachments?: ChatAttachment[] };
+type ChatMessage = { id: string; role: "user" | "assistant"; content: string; createdAt: string; attachments?: ChatAttachment[]; pending?: boolean; error?: boolean };
 type ChatThread = { id: string; title: string; agentId: AgentId; projectId: string; status?: "active" | "archived"; createdAt: string; updatedAt: string };
 type ProjectMemory = { summary: string; facts: string[]; decisions: string[]; todos: string[]; preferences: string[] };
 type MemoryStats = { chunkCount: number; totalTokensEstimate: number; sources: string[]; updatedAt: string } | null;
@@ -60,6 +60,7 @@ export default function ProjectContextDetailPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [chatLoading, setChatLoading] = useState(false);
+  const [pending, setPending] = useState(false);
   const [viewerFile, setViewerFile] = useState<ViewerFile | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -108,6 +109,7 @@ export default function ProjectContextDetailPage() {
     const data = await readJson(res);
     if (!res.ok) throw new Error(data?.error || "Gagal memuat chat.");
     setMessages(data.messages || []);
+    setPending(Boolean(data.pending));
     setAgents(data.agents || fallbackAgents);
   };
 
@@ -119,7 +121,14 @@ export default function ProjectContextDetailPage() {
     void fetchThreads(activeAgent).catch((err) => setError((err as Error).message));
     void fetchHistory(activeAgent).catch((err) => setError((err as Error).message));
   }, [project, activeAgent]);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, chatLoading]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, chatLoading, pending]);
+  useEffect(() => {
+    if (!pending) return;
+    const timer = window.setInterval(() => {
+      void fetchHistory(activeAgent, activeThreadId).catch((err) => setError((err as Error).message));
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [pending, activeAgent, activeThreadId]);
 
   const saveProject = async () => {
     if (!project) return;
@@ -169,10 +178,11 @@ export default function ProjectContextDetailPage() {
   const sendMessage = async (event?: FormEvent) => {
     event?.preventDefault();
     const text = input.trim();
-    if (!text || chatLoading || !project) return;
-    const optimistic: ChatMessage = { id: `local-${Date.now()}`, role: "user", content: text, createdAt: new Date().toISOString() };
+    if (!text || chatLoading || pending || !project) return;
+    const optimisticUser: ChatMessage = { id: `local-user-${Date.now()}`, role: "user", content: text, createdAt: new Date().toISOString() };
+    const optimisticAssistant: ChatMessage = { id: `local-assistant-${Date.now()}`, role: "assistant", content: "", createdAt: new Date().toISOString(), pending: true };
     setInput("");
-    setMessages((prev) => [...prev, optimistic]);
+    setMessages((prev) => [...prev, optimisticUser, optimisticAssistant]);
     setChatLoading(true);
     setError("");
     try {
@@ -180,11 +190,13 @@ export default function ProjectContextDetailPage() {
       const data = await readJson(res);
       if (!res.ok) throw new Error(data?.error || "Gagal mengirim pesan.");
       setMessages(data.messages || []);
+      setPending(Boolean(data.pending));
       if (data.threadId) setActiveThreadId(data.threadId);
       if (data.thread) setThreads((prev) => [data.thread, ...prev.filter((thread) => thread.id !== data.thread.id)]);
     } catch (err) {
       setError((err as Error).message);
-      setMessages((prev) => prev.filter((message) => message.id !== optimistic.id));
+      setPending(false);
+      setMessages((prev) => prev.filter((message) => message.id !== optimisticUser.id && message.id !== optimisticAssistant.id));
       setInput(text);
     } finally { setChatLoading(false); }
   };
@@ -338,7 +350,7 @@ export default function ProjectContextDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
-            {messages.length === 0 ? <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground"><div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10"><CurrentIcon className={cn("h-7 w-7", currentAgent.tone)} /></div><h2 className="text-base font-semibold text-foreground">Mulai chat project {project.title}</h2><p className="mt-2 max-w-md text-sm">Instruksi, knowledge, dan file project ini akan ikut masuk ke prompt.</p></div> : <div className="mx-auto flex max-w-4xl flex-col gap-5">{messages.map((message) => <div key={message.id} className={cn("flex gap-3", message.role === "user" ? "justify-end" : "justify-start")}>{message.role === "assistant" && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><CurrentIcon className={cn("h-4 w-4", currentAgent.tone)} /></div>}<div className={cn("max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm", message.role === "user" ? "bg-primary text-primary-foreground" : "border border-border bg-card text-card-foreground")}><div className="whitespace-pre-wrap">{message.content}</div>{Boolean(message.attachments?.length) && <div className="mt-3 flex flex-col gap-2">{message.attachments?.map((file) => <div key={file.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-foreground">{file.name}</span><span className="text-[11px] text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</span><button type="button" onClick={() => setViewerFile({ id: file.id, name: file.name, size: file.size })} className="rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:opacity-90">Lihat</button><a href={attachmentUrl(file.id)} download={file.name} className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-primary hover:bg-background">Download</a></div>)}</div>}<div className={cn("mt-2 text-[10px] opacity-60", message.role === "user" ? "text-right" : "text-left")}>{new Date(message.createdAt).toLocaleTimeString()}</div></div>{message.role === "user" && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-slate-100"><User className="h-4 w-4" /></div>}</div>)}{chatLoading && <div className="flex items-center gap-3 text-sm text-muted-foreground"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary"><CurrentIcon className={cn("h-4 w-4", currentAgent.tone)} /></div><div className="rounded-2xl border border-border bg-card px-4 py-3"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> {currentAgent.name} menjawab...</div></div>}<div ref={bottomRef} /></div>}
+            {messages.length === 0 ? <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground"><div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10"><CurrentIcon className={cn("h-7 w-7", currentAgent.tone)} /></div><h2 className="text-base font-semibold text-foreground">Mulai chat project {project.title}</h2><p className="mt-2 max-w-md text-sm">Instruksi, knowledge, dan file project ini akan ikut masuk ke prompt.</p></div> : <div className="mx-auto flex max-w-4xl flex-col gap-5">{messages.map((message) => <div key={message.id} className={cn("flex gap-3", message.role === "user" ? "justify-end" : "justify-start")}>{message.role === "assistant" && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><CurrentIcon className={cn("h-4 w-4", currentAgent.tone)} /></div>}<div className={cn("max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm", message.role === "user" ? "bg-primary text-primary-foreground" : "border border-border bg-card text-card-foreground")}>{message.pending ? <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{currentAgent.name} sedang memproses di server…</div> : <div className="whitespace-pre-wrap">{message.content}</div>}{Boolean(message.attachments?.length) && <div className="mt-3 flex flex-col gap-2">{message.attachments?.map((file) => <div key={file.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-foreground">{file.name}</span><span className="text-[11px] text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</span><button type="button" onClick={() => setViewerFile({ id: file.id, name: file.name, size: file.size })} className="rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:opacity-90">Lihat</button><a href={attachmentUrl(file.id)} download={file.name} className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-primary hover:bg-background">Download</a></div>)}</div>}<div className={cn("mt-2 text-[10px] opacity-60", message.role === "user" ? "text-right" : "text-left")}>{new Date(message.createdAt).toLocaleTimeString()}</div></div>{message.role === "user" && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-slate-100"><User className="h-4 w-4" /></div>}</div>)}{chatLoading && <div className="flex items-center gap-3 text-sm text-muted-foreground"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary"><CurrentIcon className={cn("h-4 w-4", currentAgent.tone)} /></div><div className="rounded-2xl border border-border bg-card px-4 py-3"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> {currentAgent.name} menjawab...</div></div>}<div ref={bottomRef} /></div>}
           </CardContent>
         </Card>
 
@@ -350,7 +362,7 @@ export default function ProjectContextDetailPage() {
             </div>
             <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:shrink-0 sm:items-end">
               <select value={activeAgent} onChange={(event) => setActiveAgent(event.target.value as AgentId)} className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-xs sm:w-32 sm:flex-none md:w-40" disabled={chatLoading}>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select>
-              <Button type="submit" size="icon" className="h-11 w-11 shrink-0 rounded-xl" disabled={!input.trim() || chatLoading}>{chatLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</Button>
+              <Button type="submit" size="icon" className="h-11 w-11 shrink-0 rounded-xl" disabled={!input.trim() || chatLoading || pending}>{chatLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</Button>
             </div>
           </div>
         </form>

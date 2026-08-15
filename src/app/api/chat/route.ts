@@ -46,6 +46,8 @@ type ChatMessage = {
   content: string;
   createdAt: string;
   attachments?: ChatAttachment[];
+  pending?: boolean;
+  error?: boolean;
 };
 
 type ChatStore = {
@@ -409,6 +411,73 @@ async function askHermes(agent: AgentConfig, prompt: string) {
 
 const MEMORY_EXTRACT_EVERY = 6;
 
+/**
+ * Background generation: runs Hermes, extracts attachments, then updates the
+ * pending assistant message in place. Because this is detached from the HTTP
+ * request, it keeps running even when the browser tab is closed or the phone
+ * is locked. The client re-syncs by polling GET.
+ */
+async function runChatGeneration(params: {
+  agent: AgentConfig;
+  project: ChatProject | null;
+  activeProjectId: string;
+  threadId: string;
+  prompt: string;
+  historyBefore: ChatMessage[];
+  assistantId: string;
+}) {
+  const { agent, project, activeProjectId, threadId, prompt, historyBefore, assistantId } = params;
+
+  const finalize = async (patch: Partial<ChatMessage>) => {
+    // Re-read the store fresh so we don't clobber concurrent writes.
+    const store = await readStore(agent.id, activeProjectId, threadId);
+    const messages = store.messages.map((message) =>
+      message.id === assistantId ? { ...message, ...patch, pending: false } : message
+    );
+    await saveStore(agent.id, activeProjectId, threadId, { messages });
+    return messages;
+  };
+
+  try {
+    const promptWithContext = await buildPrompt(agent, project, historyBefore, prompt, threadId);
+    const reply = await askHermes(agent, promptWithContext);
+    const attachmentResult = await extractAndSaveChatAttachments(reply, { projectId: activeProjectId, threadId });
+
+    const nextMessages = await finalize({
+      content: attachmentResult.content,
+      attachments: attachmentResult.attachments,
+      error: false,
+      createdAt: nowIso(),
+    });
+
+    // Summarization trigger
+    const summary = await readThreadSummary(threadId);
+    if (needsSummarization(nextMessages.length, summary)) {
+      const newSummary: ThreadSummary = {
+        threadId,
+        summary: makeThreadSummary(nextMessages),
+        messageCount: nextMessages.length,
+        generatedAt: nowIso(),
+      };
+      await deleteThreadSummary(threadId).catch(() => undefined);
+      await saveThreadSummary(newSummary);
+    }
+
+    if (project) {
+      const memory = await readProjectMemory(activeProjectId);
+      if (shouldExtractMemory(nextMessages.length, memory)) {
+        extractProjectMemoryInBackground(agent, activeProjectId, nextMessages);
+      }
+    }
+  } catch (error) {
+    const err = error as Error;
+    await finalize({
+      content: `⚠️ Gagal menyelesaikan jawaban: ${clampText(err.message || "kesalahan tidak diketahui", 400)}`,
+      error: true,
+    }).catch(() => undefined);
+  }
+}
+
 function shouldExtractMemory(messageCount: number, memory: ProjectMemory) {
   const lastCount = Number((memory as ProjectMemory & { lastExtractCount?: number }).lastExtractCount || 0);
   return messageCount - lastCount >= MEMORY_EXTRACT_EVERY;
@@ -482,6 +551,7 @@ export async function GET(req: Request) {
   const project = await findProject(projectId);
   const activeProjectId = project?.id || "none";
   const store = await readStore(agentId, activeProjectId, threadId);
+  const pending = store.messages.some((message) => message.role === "assistant" && message.pending);
 
   return NextResponse.json({
     agent: { id: agent.id, name: agent.name, label: agent.label, domain: agent.domain, tone: agent.tone },
@@ -490,6 +560,7 @@ export async function GET(req: Request) {
     threadId: threadId || null,
     agents: publicAgents(),
     messages: store.messages,
+    pending,
     model: CHAT_MODEL,
     backend: agent.profile ? `hermes-profile:${agent.profile}` : "hermes-cli",
   });
@@ -540,45 +611,36 @@ export async function POST(req: Request) {
   };
 
   try {
-    const promptWithContext = await buildPrompt(agent, project, store.messages, prompt, threadId);
-    const reply = await askHermes(agent, promptWithContext);
-    const attachmentResult = await extractAndSaveChatAttachments(reply, { projectId: activeProjectId, threadId });
+    // Persist the user message + a pending assistant placeholder BEFORE running
+    // the model. This means the conversation survives even if the browser tab
+    // closes or the phone locks; generation continues in the background and the
+    // client re-syncs via GET polling.
     const assistantMessage: ChatMessage = {
       id: id(),
       role: "assistant",
-      content: attachmentResult.content,
+      content: "",
       createdAt: nowIso(),
-      attachments: attachmentResult.attachments,
+      pending: true,
     };
-
+    const historyBefore = [...store.messages];
     const nextMessages = [...store.messages, userMessage, assistantMessage];
     await saveStore(agentId, activeProjectId, threadId, { messages: nextMessages });
     const thread = await touchThread(threadId, prompt);
 
-    // Summarization trigger
-    const summary = await readThreadSummary(threadId);
-    if (needsSummarization(nextMessages.length, summary)) {
-      const newSummary: ThreadSummary = {
-        threadId,
-        summary: makeThreadSummary(nextMessages),
-        messageCount: nextMessages.length,
-        generatedAt: nowIso(),
-      };
-      await saveThreadSummary(newSummary);
-      // Keep memory compact by deleting old ones after new saved
-      await deleteThreadSummary(threadId).catch(() => undefined);
-      await saveThreadSummary(newSummary);
-    }
-
-    if (project) {
-      const memory = await readProjectMemory(activeProjectId);
-      if (shouldExtractMemory(nextMessages.length, memory)) {
-        extractProjectMemoryInBackground(agent, activeProjectId, nextMessages);
-      }
-    }
+    // Detached background generation (not awaited).
+    void runChatGeneration({
+      agent,
+      project,
+      activeProjectId,
+      threadId,
+      prompt,
+      historyBefore,
+      assistantId: assistantMessage.id,
+    });
 
     return NextResponse.json({
       ok: true,
+      pending: true,
       agent: { id: agent.id, name: agent.name, label: agent.label, domain: agent.domain, tone: agent.tone },
       project: publicProject(project),
       projectId: activeProjectId,
