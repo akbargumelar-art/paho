@@ -305,7 +305,7 @@ async function buildPrompt(agent: AgentConfig, project: ChatProject | null, hist
     "",
     "Konteks UI: ini adalah web chat Paho yang dikelompokkan berdasarkan Agent Map. Mode ini fokus chat biasa; jangan klaim sudah menjalankan tool/backend kecuali memang eksplisit tersedia di chat ini.",
     "Jawab natural seperti Claude/AI chat umum: langsung, jelas, tidak bertele-tele.",
-    "Jika user meminta file yang bisa di-download, sertakan isi file dalam blok: ```file: nama-file.ext\\nISI FILE\\n``` . Paho akan otomatis membuat attachment download dari blok itu. Jangan hanya menyimpan file ke path VPS.",
+    "Jika user meminta file yang bisa di-download, sertakan isi file dalam blok: ````file: nama-file.ext\\nISI FILE LENGKAP\\n```` . Gunakan EMPAT backtick untuk pembungkus file supaya code block di dalam file (```sql, ```bash, dst) tidak memotong isi. Tulis isi file secara lengkap sampai selesai, jangan diringkas atau dipotong di tengah. Paho akan otomatis membuat attachment download dari blok itu. Jangan hanya menyimpan file ke path VPS.",
   ];
 
   if (project) {

@@ -53,21 +53,72 @@ export async function getChatAttachment(id: string): Promise<ChatAttachment | nu
   return manifest.attachments.find((item) => item.id === id) || null;
 }
 
+type ParsedBlock = { filename: string; body: string; raw: string };
+
+const OPEN_RE = /^(`{3,})\s*(?:file|download|attachment)\s*[:=]?\s*([^\n`]+?)\s*$/i;
+
+/**
+ * Fence-aware parser for ```file: blocks.
+ *
+ * A markdown attachment normally CONTAINS fenced code blocks of its own, so a
+ * lazy `[\s\S]*?```` match truncates the file at its first inner fence. Rules:
+ *  - opening fence with 4+ backticks closes on the first fence of equal/greater
+ *    length (unambiguous, preferred),
+ *  - opening fence with exactly 3 backticks closes on the LAST fence line before
+ *    the next file block (or end of message), because inner fences always pair up.
+ */
+export function parseFileBlocks(reply: string): ParsedBlock[] {
+  const lines = String(reply || "").split("\n");
+  const blocks: ParsedBlock[] = [];
+
+  const openIdx: number[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (OPEN_RE.test(lines[i])) openIdx.push(i);
+  }
+  if (!openIdx.length) return blocks;
+
+  for (let n = 0; n < openIdx.length; n += 1) {
+    const start = openIdx[n];
+    const match = lines[start].match(OPEN_RE);
+    if (!match) continue;
+    const ticks = match[1].length;
+    const filename = match[2];
+    const limit = n + 1 < openIdx.length ? openIdx[n + 1] : lines.length;
+
+    let close = -1;
+    if (ticks >= 4) {
+      for (let i = start + 1; i < limit; i += 1) {
+        const fence = lines[i].match(/^(`{3,})\s*$/);
+        if (fence && fence[1].length >= ticks) { close = i; break; }
+      }
+    } else {
+      for (let i = limit - 1; i > start; i -= 1) {
+        if (/^`{3,}\s*$/.test(lines[i])) { close = i; break; }
+      }
+    }
+    if (close === -1) close = limit;
+
+    const body = lines.slice(start + 1, close).join("\n").replace(/^\n+|\n+$/g, "");
+    const raw = lines.slice(start, Math.min(close + 1, lines.length)).join("\n");
+    if (body.trim()) blocks.push({ filename, body, raw });
+  }
+
+  return blocks;
+}
+
 export async function extractAndSaveChatAttachments(reply: string, meta: { projectId: string; threadId: string }) {
   const attachments: ChatAttachment[] = [];
+  const blocks = parseFileBlocks(reply);
+  if (!blocks.length) return { content: reply, attachments };
+
   const manifest = await readManifest();
   const dir = path.join(ATTACHMENTS_DIR, safePart(meta.projectId), safePart(meta.threadId));
   let content = reply;
 
-  const fileBlock = /```(?:file|download|attachment)\s*[:=]?\s*([^\n`]+)\n([\s\S]*?)```/gi;
-  const matches = Array.from(reply.matchAll(fileBlock));
-  if (!matches.length) return { content: reply, attachments };
-
   await mkdir(dir, { recursive: true });
-  for (const match of matches) {
-    const filename = safeFilename(match[1]);
-    const body = String(match[2] || "").replace(/^\n+|\n+$/g, "");
-    if (!body.trim()) continue;
+  for (const block of blocks) {
+    const filename = safeFilename(block.filename);
+    const body = block.body;
     const id = makeId();
     const storedName = `${Date.now()}-${filename}`;
     const filePath = path.join(dir, storedName);
@@ -82,7 +133,7 @@ export async function extractAndSaveChatAttachments(reply: string, meta: { proje
     };
     attachments.push(attachment);
     manifest.attachments.push(attachment);
-    content = content.replace(match[0], `\n[File terlampir: ${filename}]\n`);
+    content = content.replace(block.raw, `\n[File terlampir: ${filename}]\n`);
   }
 
   if (attachments.length) await saveManifest(manifest);
