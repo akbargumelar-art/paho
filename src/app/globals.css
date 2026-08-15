@@ -77,6 +77,8 @@
     --input: oklch(0.88 0.01 260);
     --ring: oklch(0.55 0.18 260);
     --radius: 0.625rem;
+    --dashboard-mobile-tabbar-height: calc(4.75rem + env(safe-area-inset-bottom));
+    --dashboard-mobile-content-bottom: calc(var(--dashboard-mobile-tabbar-height) + 3rem);
     
     --hermes: oklch(0.55 0.18 260);
     --hermes-foreground: oklch(0.98 0 0);
@@ -246,6 +248,7 @@
   gap: 0.25rem;
   border-top: 1px solid var(--border);
   background: color-mix(in oklch, var(--background) 94%, transparent);
+  min-height: var(--dashboard-mobile-tabbar-height);
   padding: 0.45rem max(0.75rem, env(safe-area-inset-left)) calc(0.45rem + env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-right));
   box-shadow: 0 -12px 28px oklch(0 0 0 / 0.12);
   backdrop-filter: blur(18px);

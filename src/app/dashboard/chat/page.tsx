@@ -396,7 +396,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-80px)] flex-col gap-4 fade-in-up">
+    <div className="flex h-[calc(100dvh-80px)] min-h-0 flex-col gap-4 fade-in-up max-md:h-auto max-md:min-h-[calc(100dvh-80px)]">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">

@@ -61,7 +61,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         "pl-0"
       )}>
         <Topbar />
-        <main className="dashboard-main p-4 pb-[calc(5.75rem+env(safe-area-inset-bottom))] md:p-6 md:pb-6">
+        <main className="dashboard-main p-4 pb-[var(--dashboard-mobile-content-bottom)] md:p-6 md:pb-6">
           {children}
         </main>
       </div>
