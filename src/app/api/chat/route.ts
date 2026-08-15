@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
-import { execFile } from "child_process";
-import { promisify } from "util";
+import { execFile, spawn } from "child_process";
 
 import { getAuthSession, unauthorized } from "@/lib/api-auth";
 import { extractAndSaveChatAttachments } from "@/lib/chat-attachments";
@@ -151,7 +150,6 @@ const THREADS_PATH = path.join(DATA_DIR, "threads.json");
 const JOBS_PATH = path.join(DATA_DIR, "jobs.json");
 const CHAT_MODEL = process.env.PAHO_CHAT_MODEL || "hermes";
 const HERMES_BIN = process.env.PAHO_HERMES_BIN || "/root/.local/bin/hermes";
-const execFileAsync = promisify(execFile);
 
 export const runtime = "nodejs";
 
@@ -371,43 +369,79 @@ function cleanHermesOutput(raw: string) {
   return lines.join("\n").trim();
 }
 
-async function askHermes(agent: AgentConfig, prompt: string) {
+/**
+ * Runs Hermes and streams stdout back through `onPartial` so the caller can
+ * persist partial text while generation is still in flight. Uses `spawn`
+ * instead of `execFile` because we need incremental output, not a final buffer.
+ */
+async function askHermes(agent: AgentConfig, prompt: string, onPartial?: (text: string) => void) {
   const args = ["chat", "-q", prompt, "-m", CHAT_MODEL, "-Q"];
   if (agent.profile) {
     args.unshift("--profile", agent.profile);
   }
 
-  try {
-    const { stdout, stderr } = await execFileAsync(HERMES_BIN, args, {
-      timeout: 240_000,
-      maxBuffer: 1024 * 1024 * 8,
+  return await new Promise<string>((resolve, reject) => {
+    const child = spawn(HERMES_BIN, args, {
       env: {
         ...process.env,
         PATH: `/root/.nvm/versions/node/v24.19.0/bin:${process.env.PATH || ""}`,
       },
     });
 
-    const text = cleanHermesOutput(stdout || stderr || "");
-    if (!text) throw new Error("Hermes tidak mengembalikan jawaban.");
-    return text;
-  } catch (error) {
-    const err = error as Error & { stdout?: string; stderr?: string; signal?: string; killed?: boolean };
-    const stderr = cleanHermesOutput(err.stderr || err.stdout || "");
-    if (err.killed || err.signal === "SIGTERM") {
-      throw new Error("Agent terlalu lama menjawab. Coba ringkas context project atau pecah file context menjadi lebih kecil.");
-    }
-    if (stderr) {
-      throw new Error(clampText(stderr, 800));
-    }
-    console.error("[paho-chat] hermes exec failed", {
-      message: err.message?.slice(0, 500),
-      code: (err as Error & { code?: string }).code,
-      signal: err.signal,
-      killed: err.killed,
-      promptChars: prompt.length,
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    let timedOut = false;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, 240_000);
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+      if (stdout.length > 1024 * 1024 * 8) stdout = stdout.slice(-1024 * 1024 * 8);
+      if (onPartial) {
+        const partial = cleanHermesOutput(stdout);
+        if (partial) onPartial(partial);
+      }
     });
-    throw new Error("Hermes gagal memproses chat project. Detail teknis sudah dicatat di log server.");
-  }
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    const fail = (message: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(new Error(message));
+    };
+
+    child.on("error", (error: Error) => fail(error.message));
+
+    child.on("close", () => {
+      if (settled) return;
+      clearTimeout(timer);
+      if (timedOut) {
+        settled = true;
+        reject(new Error("Agent terlalu lama menjawab. Coba ringkas context project atau pecah file context menjadi lebih kecil."));
+        return;
+      }
+      const text = cleanHermesOutput(stdout || stderr || "");
+      if (text) {
+        settled = true;
+        resolve(text);
+        return;
+      }
+      const cleanedErr = cleanHermesOutput(stderr);
+      if (cleanedErr) {
+        fail(clampText(cleanedErr, 800));
+        return;
+      }
+      console.error("[paho-chat] hermes stream produced no output", { promptChars: prompt.length });
+      fail("Hermes gagal memproses chat project. Detail teknis sudah dicatat di log server.");
+    });
+  });
 }
 
 const MEMORY_EXTRACT_EVERY = 6;
@@ -520,7 +554,38 @@ async function runJob(job: ChatJob) {
     );
 
     const promptWithContext = await buildPrompt(agent, project, historyBefore, job.prompt, job.threadId);
-    const reply = await askHermes(agent, promptWithContext);
+
+    // Stream partial output into the pending message so the client can render
+    // the answer as it grows. Throttled to limit disk writes on long answers.
+    let lastFlush = 0;
+    let latestPartial = "";
+    let flushPromise: Promise<void> = Promise.resolve();
+    const flushPartial = () => {
+      const snapshot = latestPartial;
+      flushPromise = flushPromise.then(async () => {
+        try {
+          const current = await readStore(job.agentId, activeProjectId, job.threadId);
+          const messages = current.messages.map((message) =>
+            message.id === job.assistantId ? { ...message, content: snapshot, pending: true } : message
+          );
+          await saveStore(job.agentId, activeProjectId, job.threadId, { messages });
+        } catch {
+          // A failed partial flush must never abort the actual generation.
+        }
+      });
+      return flushPromise;
+    };
+
+    const reply = await askHermes(agent, promptWithContext, (partial) => {
+      latestPartial = partial;
+      const now = Date.now();
+      if (now - lastFlush < 900) return;
+      lastFlush = now;
+      void flushPartial();
+    });
+    // Flush the final streamed snapshot before replacing pending=true.
+    latestPartial = reply;
+    await flushPartial();
     const attachmentResult = await extractAndSaveChatAttachments(reply, { projectId: activeProjectId, threadId: job.threadId });
 
     const nextMessages = await finalize({
