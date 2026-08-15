@@ -7,7 +7,7 @@ import { useSidebarStore } from "@/lib/sidebar-store"
 import {
   LayoutDashboard, ListTodo, FolderKanban, Cpu, ScrollText,
   ShieldCheck, BookOpen, ClipboardCheck, ChevronLeft, ChevronRight, Zap, X,
-  MessageSquare, FileJson, Bell, Network, Boxes
+  MessageSquare, FileJson, Bell, Network, Boxes, Menu
 } from "lucide-react"
 
 type MenuItem = {
@@ -61,6 +61,13 @@ const menuGroups: MenuGroup[] = [
       { href: "/dashboard/pilot", label: "Evaluasi Pilot", icon: ClipboardCheck },
     ],
   },
+]
+
+const mobileTabItems = [
+  { href: "/dashboard", label: "Home", icon: LayoutDashboard },
+  { href: "/dashboard/chat", label: "Chat", icon: MessageSquare },
+  { href: "/dashboard/tasks", label: "Tugas", icon: ListTodo },
+  { href: "/dashboard/reminders", label: "Reminder", icon: Bell },
 ]
 
 function isRouteActive(pathname: string, href: string) {
@@ -163,5 +170,39 @@ export function Sidebar() {
         </div>
       </aside>
     </>
+  )
+}
+
+export function MobileTabBar() {
+  const pathname = usePathname()
+  const setMobileOpen = useSidebarStore(s => s.setMobileOpen)
+  const hasActiveTab = mobileTabItems.some(item => isRouteActive(pathname, item.href))
+
+  return (
+    <nav className="dashboard-mobile-tabbar md:hidden" aria-label="Navigasi utama mobile">
+      {mobileTabItems.map((item) => {
+        const isActive = isRouteActive(pathname, item.href)
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={cn("dashboard-mobile-tab", isActive && "is-active")}
+            aria-current={isActive ? "page" : undefined}
+          >
+            <item.icon className="h-5 w-5" />
+            <span>{item.label}</span>
+          </Link>
+        )
+      })}
+      <button
+        type="button"
+        className={cn("dashboard-mobile-tab", !hasActiveTab && "is-active")}
+        onClick={() => setMobileOpen(true)}
+        aria-label="Buka menu lengkap"
+      >
+        <Menu className="h-5 w-5" />
+        <span>Menu</span>
+      </button>
+    </nav>
   )
 }

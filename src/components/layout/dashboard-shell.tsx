@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { useSession } from "@/lib/auth-client"
 import { useAppStore } from "@/lib/store"
 import { useSidebarStore } from "@/lib/sidebar-store"
-import { Sidebar } from "@/components/layout/sidebar"
+import { MobileTabBar, Sidebar } from "@/components/layout/sidebar"
 import { Topbar } from "@/components/layout/topbar"
 import { cn } from "@/lib/utils"
 
@@ -53,7 +53,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="dashboard-shell min-h-dvh bg-background max-md:bg-muted/30">
       <Sidebar />
       <div className={cn(
         "transition-all duration-300",
@@ -61,10 +61,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         "pl-0"
       )}>
         <Topbar />
-        <main className="p-4 md:p-6">
+        <main className="dashboard-main p-4 pb-[calc(5.75rem+env(safe-area-inset-bottom))] md:p-6 md:pb-6">
           {children}
         </main>
       </div>
+      <MobileTabBar />
     </div>
   )
 }
