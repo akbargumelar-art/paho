@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 import { useSidebarStore } from "@/lib/sidebar-store"
 import { ChevronLeft, ChevronRight, Zap, X, MoreHorizontal } from "lucide-react"
 import { findSection, isHrefActive, mobileTabs, sidebarGroups } from "@/lib/navigation"
+import { useEffect, useState } from "react"
 
 const groups = sidebarGroups()
 
@@ -13,6 +14,17 @@ export function Sidebar() {
   const pathname = usePathname()
   const { collapsed, toggleCollapsed, mobileOpen, setMobileOpen } = useSidebarStore()
   const activeSection = findSection(pathname)
+  // App name + logo come from the profile settings so branding is editable.
+  const [branding, setBranding] = useState<{ appName: string; hasLogo: boolean } | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    fetch("/api/profile", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then(json => { if (alive && json?.branding) setBranding(json.branding) })
+      .catch(() => undefined)
+    return () => { alive = false }
+  }, [])
 
   return (
     <>
@@ -30,12 +42,17 @@ export function Sidebar() {
         mobileOpen && "max-md:translate-x-0 max-md:shadow-2xl",
       )}>
         <div className="flex h-16 shrink-0 items-center gap-3 border-b border-border px-4">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <Zap className="h-5 w-5 text-primary" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-primary/10">
+            {branding?.hasLogo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src="/api/profile/image?kind=logo" alt="Logo aplikasi" className="h-full w-full object-contain" />
+            ) : (
+              <Zap className="h-5 w-5 text-primary" />
+            )}
           </div>
           {(!collapsed || mobileOpen) && (
             <div className="fade-in-up min-w-0 flex-1">
-              <h1 className="truncate text-sm font-bold tracking-tight">ASPRI</h1>
+              <h1 className="truncate text-sm font-bold tracking-tight">{branding?.appName || "ASPRI"}</h1>
               <p className="truncate text-[10px] text-muted-foreground">Personal Assistant Gateway</p>
             </div>
           )}

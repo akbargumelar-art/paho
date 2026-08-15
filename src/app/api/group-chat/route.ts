@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, writeFile, readdir } from "fs/promises";
 import path from "path";
 import { spawn } from "child_process";
 import { getAuthSession, unauthorized } from "@/lib/api-auth";
+import { cleanHermesOutput, streamingChatArgs } from "@/lib/hermes-output";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -34,6 +35,24 @@ const AGENTS: Record<AgentId, AgentConfig> = {
 let workerRunning = false;
 const nowIso = () => new Date().toISOString();
 const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+// A declared profile is only passed to Hermes if it actually exists, otherwise
+// `hermes --profile X` exits 1 and that agent fails on every message. Verified:
+// profile "ocla" does not exist, so Ocla must fall back to the default profile
+// with its persona injected purely through the prompt.
+let profileCache: { at: number; names: Set<string> } | null = null;
+async function availableProfiles(): Promise<Set<string>> {
+  if (profileCache && Date.now() - profileCache.at < 60_000) return profileCache.names;
+  const names = new Set<string>();
+  try {
+    const entries = await readdir("/root/.hermes/profiles", { withFileTypes: true });
+    for (const e of entries) if (e.isDirectory()) names.add(e.name);
+  } catch {
+    // No profiles dir → only the default profile exists.
+  }
+  profileCache = { at: Date.now(), names };
+  return names;
+}
 
 async function ensureDirs() { await mkdir(GROUP_DIR, { recursive: true }); }
 async function readJson<T>(file: string, fallback: T): Promise<T> { try { return JSON.parse(await readFile(file, "utf8")) as T; } catch { return fallback; } }
@@ -77,17 +96,50 @@ function buildPrompt(agent: AgentConfig, room: GroupRoom, history: GroupMessage[
 }
 
 async function askHermes(agent: AgentConfig, prompt: string, model: string, onPartial: (text: string) => void) {
-  const args = ["chat", "-q", prompt, "-m", model || CHAT_MODEL, "-Q"];
-  if (agent.profile) args.unshift("--profile", agent.profile);
+  const profiles = await availableProfiles();
+  const profile = agent.profile && profiles.has(agent.profile) ? agent.profile : undefined;
+  // Omit -Q for real streaming. Quiet mode buffers the complete answer until
+  // process exit. cleanHermesOutput strips the non-quiet TUI frame on every
+  // partial, so the stored assistant content is plain text while it grows.
+  const args = streamingChatArgs(prompt, model || CHAT_MODEL, profile);
   let output = "";
   let stderr = "";
   return await new Promise<string>((resolve, reject) => {
-    const child = spawn(HERMES_BIN, args, { env: { ...process.env, HOME: "/root" }, stdio: ["ignore", "pipe", "pipe"] });
-    const timer = setTimeout(() => { child.kill("SIGTERM"); reject(new Error("Timeout > 180s")); }, 180_000);
-    child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); if (output.length > 120_000) output = output.slice(-120_000); onPartial(output.trim()); });
+    const child = spawn(HERMES_BIN, args, {
+      env: {
+        ...process.env,
+        HOME: "/root",
+        PATH: `/root/.nvm/versions/node/v24.19.0/bin:${process.env.PATH || ""}`,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let settled = false;
+    const finishError = (message: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(new Error(message));
+    };
+    const timer = setTimeout(() => { child.kill("SIGTERM"); finishError("Timeout > 180s"); }, 180_000);
+    child.stdout.on("data", (chunk: Buffer) => {
+      output += chunk.toString();
+      if (output.length > 120_000) output = output.slice(-120_000);
+      const partial = cleanHermesOutput(output);
+      if (partial) onPartial(partial);
+    });
     child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); if (stderr.length > 20_000) stderr = stderr.slice(-20_000); });
-    child.on("error", (e) => { clearTimeout(timer); reject(e); });
-    child.on("close", (code) => { clearTimeout(timer); const text = output.trim(); if (code === 0 && text) resolve(text); else reject(new Error(stderr.trim() || `Hermes exit ${code}`)); });
+    child.on("error", (e) => finishError(e.message));
+    child.on("close", (code) => {
+      if (settled) return;
+      clearTimeout(timer);
+      const text = cleanHermesOutput(output || stderr);
+      if (code === 0 && text) {
+        settled = true;
+        resolve(text);
+      } else {
+        finishError(cleanHermesOutput(stderr) || `Hermes exit ${code}`);
+      }
+    });
   });
 }
 

@@ -158,11 +158,13 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading, pending]);
 
+  // Poll while a reply is generating. `background: true` keeps the transcript
+  // mounted so the partial text visibly grows instead of flickering.
   useEffect(() => {
     if (!pending) return;
     const timer = window.setInterval(() => {
-      void fetchHistory(activeAgent, activeProjectId, activeThreadId);
-    }, 1200);
+      void fetchHistory(activeAgent, activeProjectId, activeThreadId, { background: true });
+    }, 700);
     return () => window.clearInterval(timer);
   }, [pending, activeAgent, activeProjectId, activeThreadId]);
 
@@ -195,13 +197,20 @@ export default function ChatPage() {
     }
   };
 
-  const fetchHistory = async (agent: AgentId, projectId: string, threadId = "") => {
-    setInitialLoading(true);
-    setError("");
+  /**
+   * `background: true` is used by the streaming poll. It must NOT touch
+   * `initialLoading`, otherwise every poll tick swaps the whole transcript for
+   * the "Memuat chat..." spinner and the bubble just blinks instead of showing
+   * the answer growing.
+   */
+  const fetchHistory = async (agent: AgentId, projectId: string, threadId = "", options?: { background?: boolean }) => {
+    const background = Boolean(options?.background);
+    if (!background) setInitialLoading(true);
+    if (!background) setError("");
     try {
       const qs = new URLSearchParams({ agent, projectId });
       if (threadId) qs.set("threadId", threadId);
-      const res = await fetch(`/api/chat?${qs.toString()}`);
+      const res = await fetch(`/api/chat?${qs.toString()}`, { cache: "no-store" });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Gagal memuat chat.");
       setMessages(data.messages || []);
@@ -210,9 +219,10 @@ export default function ChatPage() {
       setModel(data.model || "hermes");
       setBackend(data.backend || "hermes-cli");
     } catch (err) {
-      setError((err as Error).message);
+      // A transient poll failure must not wipe the transcript being streamed.
+      if (!background) setError((err as Error).message);
     } finally {
-      setInitialLoading(false);
+      if (!background) setInitialLoading(false);
     }
   };
 

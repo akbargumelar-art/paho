@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Sun, CloudRain, Cloud, CloudSun, Moon, MapPin, RefreshCw, Settings2,
   CalendarDays, ListTodo, Clock, Loader2, Save, Search, X,
+  CheckCircle2, Circle, Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +25,18 @@ type BriefSettings = {
   showAgenda: boolean;
 };
 
-type AgendaItem = { id: number; title: string; category: string; priority: string; status: string; dueDate: string | null };
+type AgendaItem = {
+  id: number;
+  title: string;
+  category: string;
+  priority: string;
+  status: string;
+  dueDate: string | null;
+  createdAt: string | null;
+  notes: string | null;
+  overdue: boolean;
+  dueToday: boolean;
+};
 type Weather = { now: { temperature: number; description: string; weatherCode: number; isDay: boolean } | null; daily: { max: number; min: number } };
 type BriefData = {
   settings: BriefSettings;
@@ -36,6 +48,7 @@ type BriefData = {
   prayerError: string | null;
   agenda: AgendaItem[];
   pendingTasks: number;
+  doneToday: number;
   agendaError: string | null;
 };
 
@@ -56,6 +69,21 @@ function WeatherIcon({ code, isDay }: { code: number; isDay: boolean }) {
   return <CloudRain className="h-8 w-8 text-sky-400" />;
 }
 
+/** "2026-08-16" / "2026-08-16 07:30:00" -> "16 Agu 2026". Never invents a date. */
+function formatDate(value: string | null): string {
+  if (!value) return "-";
+  const day = value.slice(0, 10);
+  const d = new Date(`${day}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** Local YYYY-MM-DD for the date input default (UTC would shift the day). */
+function localTodayInput(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export default function BriefPage() {
   const [data, setData] = useState<BriefData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,23 +97,72 @@ export default function BriefPage() {
   const [geoResults, setGeoResults] = useState<GeoResult[]>([]);
   const [geoLoading, setGeoLoading] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // agenda add/checklist
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [newTask, setNewTask] = useState({ title: "", category: "work", priority: "normal", dueDate: localTodayInput() });
+  const [savingTask, setSavingTask] = useState(false);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
+
+  /** `background` refreshes data without flashing the full-page spinner. */
+  const load = useCallback(async (background = false) => {
+    if (!background) setLoading(true);
     try {
-      const res = await fetch("/api/brief");
+      const res = await fetch("/api/brief", { cache: "no-store" });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || "Gagal memuat brief.");
       setData(json);
-      setForm(json.settings);
+      setForm((prev) => prev ?? json.settings);
       if (!json.configured) setShowSettings(true);
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  const addTask = async () => {
+    const title = newTask.title.trim();
+    if (!title) return;
+    setSavingTask(true);
+    setError("");
+    try {
+      const res = await fetch("/api/brief/agenda", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...newTask, title }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Gagal menambah tugas.");
+      setNewTask({ title: "", category: newTask.category, priority: "normal", dueDate: localTodayInput() });
+      setShowAddTask(false);
+      await load(true);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSavingTask(false);
+    }
+  };
+
+  const toggleTask = async (id: number, done: boolean) => {
+    setTogglingId(id);
+    setError("");
+    try {
+      const res = await fetch("/api/brief/agenda", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, done }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Gagal update tugas.");
+      await load(true);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setTogglingId(null);
+    }
+  };
 
   const searchLocation = async () => {
     if (!geoQuery.trim()) return;
@@ -273,32 +350,101 @@ export default function BriefPage() {
           {data.settings.showAgenda && (
             <Card className="md:col-span-2">
               <CardHeader className="py-3">
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <CalendarDays className="h-4 w-4 text-sky-400" /> Agenda &amp; Tugas Hari Ini
-                  <Badge variant="outline" className="ml-auto gap-1 text-[10px]"><ListTodo className="h-3 w-3" /> {data.pendingTasks} pending</Badge>
+                <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
+                  <CalendarDays className="h-4 w-4 shrink-0 text-sky-400" /> Agenda &amp; Tugas Hari Ini
+                  <span className="ml-auto flex flex-wrap items-center gap-1.5">
+                    <Badge variant="outline" className="gap-1 text-[10px]"><ListTodo className="h-3 w-3" /> {data.pendingTasks} pending</Badge>
+                    {data.doneToday > 0 && (
+                      <Badge variant="outline" className="gap-1 border-emerald-500/40 text-[10px] text-emerald-500">
+                        <CheckCircle2 className="h-3 w-3" /> {data.doneToday} selesai
+                      </Badge>
+                    )}
+                    <Button size="sm" variant="outline" onClick={() => setShowAddTask((s) => !s)} className="h-7 gap-1 px-2 text-[11px]">
+                      <Plus className="h-3 w-3" /> Tambah
+                    </Button>
+                  </span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                {showAddTask && (
+                  <div className="mb-3 space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                    <Input
+                      value={newTask.title}
+                      onChange={(e) => setNewTask((s) => ({ ...s, title: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addTask(); } }}
+                      placeholder="Judul tugas baru"
+                      className="h-9 text-sm"
+                    />
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <select value={newTask.category} onChange={(e) => setNewTask((s) => ({ ...s, category: e.target.value }))} className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-xs">
+                        <option value="work">work</option>
+                        <option value="personal">personal</option>
+                        <option value="bisnis">bisnis</option>
+                      </select>
+                      <select value={newTask.priority} onChange={(e) => setNewTask((s) => ({ ...s, priority: e.target.value }))} className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-xs">
+                        <option value="low">low</option>
+                        <option value="normal">normal</option>
+                        <option value="high">high</option>
+                        <option value="urgent">urgent</option>
+                      </select>
+                      <Input type="date" value={newTask.dueDate} onChange={(e) => setNewTask((s) => ({ ...s, dueDate: e.target.value }))} className="h-9 min-w-0 text-xs" />
+                      <Button size="sm" onClick={() => void addTask()} disabled={savingTask || !newTask.title.trim()} className="h-9 gap-1 text-xs">
+                        {savingTask ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />} Simpan
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 {data.agendaError ? (
                   <p className="text-xs text-destructive">Gagal baca agenda: {data.agendaError}</p>
                 ) : data.agenda.length === 0 ? (
                   <p className="text-xs text-muted-foreground">Tidak ada tugas untuk hari ini. 🎉</p>
                 ) : (
                   <div className="space-y-2">
-                    {data.agenda.map((t) => (
-                      <div key={t.id} className="flex items-center gap-3 rounded-lg border border-border bg-card/60 px-3 py-2">
-                        <span className={cn("text-lg leading-none", PRIORITY_COLOR[t.priority] || "text-muted-foreground")}>•</span>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm">{t.title}</div>
-                          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                            <span className="uppercase">{t.category}</span>
-                            {t.dueDate && <span>· jatuh tempo {t.dueDate}</span>}
-                            {t.status === "in_progress" && <span className="text-amber-500">· berjalan</span>}
+                    {data.agenda.map((t) => {
+                      const done = t.status === "done";
+                      return (
+                        <div
+                          key={t.id}
+                          className={cn(
+                            "flex items-start gap-3 rounded-lg border bg-card/60 px-3 py-2",
+                            done ? "border-emerald-500/30 opacity-70" : t.overdue ? "border-destructive/40" : "border-border"
+                          )}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => void toggleTask(t.id, !done)}
+                            disabled={togglingId === t.id}
+                            aria-label={done ? `Batalkan selesai: ${t.title}` : `Tandai selesai: ${t.title}`}
+                            className="mt-0.5 shrink-0 rounded transition hover:opacity-80"
+                          >
+                            {togglingId === t.id ? (
+                              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                            ) : done ? (
+                              <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                            ) : (
+                              <Circle className={cn("h-5 w-5", PRIORITY_COLOR[t.priority] || "text-muted-foreground")} />
+                            )}
+                          </button>
+                          <div className="min-w-0 flex-1">
+                            <div className={cn("break-words text-sm", done && "line-through text-muted-foreground")}>{t.title}</div>
+                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
+                              <span className="rounded bg-muted px-1.5 py-0.5 uppercase">{t.category}</span>
+                              <span className={cn("rounded px-1.5 py-0.5", PRIORITY_COLOR[t.priority] || "text-muted-foreground")}>{t.priority}</span>
+                              <span className="inline-flex items-center gap-1">
+                                <Clock className="h-3 w-3" /> dibuat {formatDate(t.createdAt)}
+                              </span>
+                              <span className={cn("inline-flex items-center gap-1", t.overdue && "font-semibold text-destructive", t.dueToday && !done && "font-semibold text-amber-500")}>
+                                <CalendarDays className="h-3 w-3" />
+                                {t.dueDate ? `due ${formatDate(t.dueDate)}${t.overdue ? " (lewat)" : t.dueToday ? " (hari ini)" : ""}` : "tanpa due date"}
+                              </span>
+                              {t.status === "in_progress" && <span className="text-amber-500">berjalan</span>}
+                            </div>
+                            {t.notes && <p className="mt-1 break-words text-[11px] text-muted-foreground/80">{t.notes}</p>}
                           </div>
                         </div>
-                        <Badge variant="outline" className="text-[10px]">{t.priority}</Badge>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>

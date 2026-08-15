@@ -4,6 +4,7 @@ import path from "path";
 import { execFile, spawn } from "child_process";
 
 import { getAuthSession, unauthorized } from "@/lib/api-auth";
+import { cleanHermesOutput, streamingChatArgs } from "@/lib/hermes-output";
 import { extractAndSaveChatAttachments } from "@/lib/chat-attachments";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import {
@@ -351,25 +352,7 @@ async function buildPrompt(agent: AgentConfig, project: ChatProject | null, hist
   return [...intro, ...recent, "Pesan baru dari user:", prompt].join("\n");
 }
 
-function cleanHermesOutput(raw: string) {
-  const lines = raw
-    .replace(/\r/g, "")
-    .split("\n")
-    .filter((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return true;
-      if (trimmed.startsWith("Warning: Unknown toolsets:")) return false;
-      if (trimmed.startsWith("session_id:")) return false;
-      if (trimmed.startsWith("Query:")) return false;
-      if (trimmed === "Initializing agent...") return false;
-      if (trimmed.startsWith("Resume this session with:")) return false;
-      if (trimmed.startsWith("hermes --resume")) return false;
-      if (trimmed.startsWith("hermes -c ")) return false;
-      if (/^[─╭╰│]/.test(trimmed)) return false;
-      return true;
-    });
-  return lines.join("\n").trim();
-}
+/** See src/lib/hermes-output.ts — shared with the group chat route. */
 
 /**
  * Runs Hermes and streams stdout back through `onPartial` so the caller can
@@ -377,10 +360,9 @@ function cleanHermesOutput(raw: string) {
  * instead of `execFile` because we need incremental output, not a final buffer.
  */
 async function askHermes(agent: AgentConfig, prompt: string, onPartial?: (text: string) => void, model?: string) {
-  const args = ["chat", "-q", prompt, "-m", model || CHAT_MODEL, "-Q"];
-  if (agent.profile) {
-    args.unshift("--profile", agent.profile);
-  }
+  // Do NOT pass -Q here: quiet mode buffers the whole answer to the end, so a
+  // streaming UI would only blink an empty bubble. See lib/hermes-output.ts.
+  const args = streamingChatArgs(prompt, model || CHAT_MODEL, agent.profile);
 
   return await new Promise<string>((resolve, reject) => {
     const child = spawn(HERMES_BIN, args, {

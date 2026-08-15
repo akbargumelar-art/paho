@@ -9,7 +9,19 @@ const TASKWORK_DB = "/root/obsidian-vault/90 Hermes/Taskwork/taskwork.db";
 
 type WeatherNow = { temperature: number; weatherCode: number; description: string; isDay: boolean } | null;
 type PrayerTimes = Record<string, string> | null;
-type AgendaItem = { id: number; title: string; category: string; priority: string; status: string; dueDate: string | null };
+type AgendaItem = {
+  id: number;
+  title: string;
+  category: string;
+  priority: string;
+  status: string;
+  dueDate: string | null;
+  createdAt: string | null;
+  notes: string | null;
+  /** Derived server-side so the UI does not re-implement date math. */
+  overdue: boolean;
+  dueToday: boolean;
+};
 
 const WEATHER_CODES: Record<number, string> = {
   0: "Cerah", 1: "Cerah berawan", 2: "Berawan sebagian", 3: "Berawan",
@@ -58,33 +70,61 @@ async function fetchPrayer(lat: number, lon: number, method: number): Promise<Pr
   return out;
 }
 
-async function readAgendaAsync(): Promise<{ agenda: AgendaItem[]; pending: number }> {
+/** Local YYYY-MM-DD; using toISOString() here would shift the day in UTC+7. */
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+async function readAgendaAsync(): Promise<{ agenda: AgendaItem[]; pending: number; done: number }> {
+  const db = createClient({ url: `file:${TASKWORK_DB}` });
   try {
-    const db = createClient({ url: `file:${TASKWORK_DB}` });
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localToday();
+    // Today's agenda = open tasks due today or earlier (or undated), PLUS
+    // anything already completed today so the checklist shows what is done.
     const rows = await db.execute({
-      sql: `SELECT id, title, category, priority, status, due_date as dueDate
+      sql: `SELECT id, title, category, priority, status, due_date as dueDate, created_at as createdAt, notes
        FROM tasks
-       WHERE status IN ('todo','in_progress')
-         AND (due_date IS NULL OR date(due_date) <= date(?))
-       ORDER BY (due_date IS NULL), date(due_date) ASC,
+       WHERE (
+               status IN ('todo','in_progress')
+               AND (due_date IS NULL OR date(due_date) <= date(?))
+             )
+          OR (status = 'done' AND date(COALESCE(completed_at, updated_at)) = date(?))
+       ORDER BY
+         CASE status WHEN 'done' THEN 1 ELSE 0 END,
+         (due_date IS NULL), date(due_date) ASC,
          CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END
-       LIMIT 20`,
+       LIMIT 40`,
+      args: [today, today],
+    });
+    const agenda = rows.rows.map((r) => {
+      const dueDate = r.dueDate === null ? null : String(r.dueDate);
+      const dueDay = dueDate ? dueDate.slice(0, 10) : null;
+      return {
+        id: Number(r.id),
+        title: String(r.title),
+        category: String(r.category),
+        priority: String(r.priority),
+        status: String(r.status),
+        dueDate,
+        createdAt: r.createdAt === null ? null : String(r.createdAt),
+        notes: r.notes === null ? null : String(r.notes),
+        overdue: Boolean(dueDay && dueDay < today && String(r.status) !== "done"),
+        dueToday: Boolean(dueDay && dueDay === today),
+      };
+    }) as AgendaItem[];
+    const countRes = await db.execute(`SELECT COUNT(*) as c FROM tasks WHERE status IN ('todo','in_progress')`);
+    const doneRes = await db.execute({
+      sql: `SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND date(COALESCE(completed_at, updated_at)) = date(?)`,
       args: [today],
     });
-    const agenda = rows.rows.map((r) => ({
-      id: Number(r.id),
-      title: String(r.title),
-      category: String(r.category),
-      priority: String(r.priority),
-      status: String(r.status),
-      dueDate: r.dueDate === null ? null : String(r.dueDate),
-    })) as AgendaItem[];
-    const countRes = await db.execute(`SELECT COUNT(*) as c FROM tasks WHERE status IN ('todo','in_progress')`);
-    const pending = Number(countRes.rows[0]?.c ?? 0);
-    return { agenda, pending };
-  } catch {
-    return { agenda: [], pending: 0 };
+    return {
+      agenda,
+      pending: Number(countRes.rows[0]?.c ?? 0),
+      done: Number(doneRes.rows[0]?.c ?? 0),
+    };
+  } finally {
+    db.close();
   }
 }
 
@@ -105,15 +145,18 @@ export async function GET() {
     prayerError: null,
     agenda: [],
     pendingTasks: 0,
+    doneToday: 0,
     agendaError: null,
   };
 
   if (settings.showAgenda) {
     try {
-      const { agenda, pending } = await readAgendaAsync();
+      const { agenda, pending, done } = await readAgendaAsync();
       result.agenda = agenda;
       result.pendingTasks = pending;
+      result.doneToday = done;
     } catch (e) {
+      // Surface the real reason instead of silently showing an empty agenda.
       result.agendaError = (e as Error).message;
     }
   }
