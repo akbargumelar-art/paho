@@ -1,20 +1,18 @@
 "use client"
 
 import { useTheme } from "next-themes"
-import { useAppStore } from "@/lib/store"
 import { signOut } from "@/lib/auth-client"
 import { useSidebarStore } from "@/lib/sidebar-store"
 import { useRouter } from "next/navigation"
-import { Sun, Moon, LogOut, User, Bell, Menu } from "lucide-react"
+import { Sun, Moon, LogOut, User, Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { NotificationBell } from "@/components/layout/notification-bell"
 import { useEffect, useState } from "react"
 
 export function Topbar() {
   const { theme, setTheme } = useTheme()
-  const approvals = useAppStore(s => s.approvals)
   const toggleMobileOpen = useSidebarStore(s => s.toggleMobileOpen)
   const router = useRouter()
-  const pendingCount = approvals.filter(a => a.reviewStatus === "pending").length
   const [mounted, setMounted] = useState(false)
 
   const handleLogout = async () => {
@@ -50,15 +48,8 @@ export function Topbar() {
       </div>
 
       <div className="flex shrink-0 items-center gap-1 md:gap-2">
-        {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-full md:h-9 md:w-9 md:rounded-md" aria-label="Notifikasi">
-          <Bell className="w-4 h-4" />
-          {pendingCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center font-bold glow-pulse">
-              {pendingCount}
-            </span>
-          )}
-        </Button>
+        {/* Notifications: deadlines, reminders, cron health */}
+        <NotificationBell />
 
         {/* Theme Toggle */}
         {mounted && (

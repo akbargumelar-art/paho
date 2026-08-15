@@ -112,8 +112,17 @@ export const navSections: NavSection[] = [
   },
 ];
 
-/** Bottom bar on mobile: only section entry points, never a tab child. */
-export const mobileTabHrefs = ["/dashboard", "/dashboard/chat", "/dashboard/kanban", "/dashboard/insights"];
+/** Bottom bar on mobile only. Order requested by Abay, Chat sits in the middle
+ *  as the highlighted primary action. `center: true` marks that treatment. */
+export const mobileTabs: { href: string; label: string; icon: NavIcon; center?: boolean }[] = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/brief", label: "Briefing", icon: Sunrise },
+  { href: "/dashboard/chat", label: "Chat", icon: MessageSquare, center: true },
+  { href: "/dashboard/kanban", label: "Kanban", icon: KanbanSquare },
+];
+
+/** Kept for compatibility with the nav-rule harness. */
+export const mobileTabHrefs = mobileTabs.map((t) => t.href);
 
 export function isHrefActive(pathname: string, href: string) {
   if (href === "/dashboard") return pathname === "/dashboard";

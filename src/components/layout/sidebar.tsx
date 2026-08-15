@@ -4,22 +4,10 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useSidebarStore } from "@/lib/sidebar-store"
-import { ChevronLeft, ChevronRight, Zap, X, Menu } from "lucide-react"
-import { findSection, isHrefActive, mobileTabHrefs, navSections, sidebarGroups } from "@/lib/navigation"
+import { ChevronLeft, ChevronRight, Zap, X, MoreHorizontal } from "lucide-react"
+import { findSection, isHrefActive, mobileTabs, sidebarGroups } from "@/lib/navigation"
 
 const groups = sidebarGroups()
-
-/** Bottom bar entries derived from the shared nav model (entry points only). */
-const mobileTabItems = mobileTabHrefs.map((href) => {
-  const section = navSections.find((s) => s.items.some((i) => i.href === href))
-  const item = section?.items.find((i) => i.href === href)
-  return {
-    href,
-    label: item?.tabLabel || item?.label || "Menu",
-    icon: section?.icon || Menu,
-    sectionId: section?.id || "",
-  }
-})
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -119,17 +107,30 @@ export function Sidebar() {
 export function MobileTabBar() {
   const pathname = usePathname()
   const setMobileOpen = useSidebarStore(s => s.setMobileOpen)
-  const activeSection = findSection(pathname)
-  const hasActiveTab = mobileTabItems.some(item =>
-    activeSection ? activeSection.id === item.sectionId : isHrefActive(pathname, item.href)
-  )
+  // A bottom entry lights up for its exact route only. Section membership is not
+  // used here because e.g. Kanban and Chat live in different sections than some
+  // of their sibling tabs, and highlighting a whole section would be misleading.
+  const hasActiveTab = mobileTabs.some(item => isHrefActive(pathname, item.href))
 
   return (
     <nav className="dashboard-mobile-tabbar md:hidden" aria-label="Navigasi utama mobile">
-      {mobileTabItems.map((item) => {
-        const isActive = activeSection
-          ? activeSection.id === item.sectionId
-          : isHrefActive(pathname, item.href)
+      {mobileTabs.map((item) => {
+        const isActive = isHrefActive(pathname, item.href)
+        if (item.center) {
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn("dashboard-mobile-tab dashboard-mobile-tab-center", isActive && "is-active")}
+              aria-current={isActive ? "page" : undefined}
+            >
+              <span className="dashboard-mobile-tab-badge">
+                <item.icon className="h-6 w-6" />
+              </span>
+              <span>{item.label}</span>
+            </Link>
+          )
+        }
         return (
           <Link
             key={item.href}
@@ -146,10 +147,10 @@ export function MobileTabBar() {
         type="button"
         className={cn("dashboard-mobile-tab", !hasActiveTab && "is-active")}
         onClick={() => setMobileOpen(true)}
-        aria-label="Buka menu lengkap"
+        aria-label="Buka menu lainnya"
       >
-        <Menu className="h-5 w-5" />
-        <span>Menu</span>
+        <MoreHorizontal className="h-5 w-5" />
+        <span>Lainnya</span>
       </button>
     </nav>
   )

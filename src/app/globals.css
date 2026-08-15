@@ -237,12 +237,17 @@
 }
 
 .dashboard-mobile-tabbar {
+  /* MOBILE ONLY. This rule is appended after Tailwind's utilities, so a bare
+     `display: flex` here would out-cascade the `md:hidden` utility (equal
+     specificity, later wins) and the bar would also show on desktop.
+     Keeping it `display: none` by default and only flexing under the md
+     breakpoint makes mobile-only correct regardless of class order. */
+  display: none;
   position: fixed;
   right: 0;
   bottom: 0;
   left: 0;
   z-index: 35;
-  display: flex;
   align-items: stretch;
   justify-content: space-around;
   gap: 0.25rem;
@@ -263,9 +268,11 @@
   justify-content: center;
   gap: 0.2rem;
   border-radius: 0.5rem;
-  padding: 0.45rem 0.25rem;
+  padding: 0.45rem 0.1rem;
   color: var(--muted-foreground);
-  font-size: 0.68rem;
+  /* 5 entries must fit on a 360px phone without ellipsizing "Dashboard". */
+  font-size: 0.625rem;
+  letter-spacing: -0.01em;
   font-weight: 600;
   line-height: 1;
   transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
@@ -482,4 +489,50 @@
     max-width: 1560px;
     margin-inline: auto;
   }
+}
+
+/* ---- Mobile bottom bar: mobile-only + centered primary action ---- */
+@media (max-width: 767px) {
+  .dashboard-mobile-tabbar {
+    display: flex;
+  }
+}
+
+/* The center entry (Chat) reads as the primary action: raised pill, accent
+   fill, slightly larger icon. Sits in normal flex order so the 5 entries stay
+   evenly spaced and nothing overlaps the labels. */
+.dashboard-mobile-tab-center {
+  position: relative;
+  align-self: center;
+}
+
+.dashboard-mobile-tab-center .dashboard-mobile-tab-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  margin-top: -1.35rem;
+  margin-bottom: 0.15rem;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 0 8px 20px color-mix(in oklch, var(--primary) 45%, transparent);
+  border: 3px solid var(--background);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.dashboard-mobile-tab-center.is-active .dashboard-mobile-tab-badge {
+  transform: translateY(-2px) scale(1.04);
+  box-shadow: 0 10px 26px color-mix(in oklch, var(--primary) 60%, transparent);
+}
+
+/* The raised pill must not inherit the flat active background. */
+.dashboard-mobile-tab-center.is-active {
+  background: transparent;
+  color: var(--primary);
+}
+
+.dashboard-mobile-tab-center:active .dashboard-mobile-tab-badge {
+  transform: scale(0.94);
 }
