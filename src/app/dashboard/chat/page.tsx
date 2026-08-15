@@ -101,13 +101,24 @@ function StreamingMessage({ content, pending }: { content: string; pending: bool
 
   useEffect(() => {
     if (!sawPending.current || shown.length >= content.length) return;
+    const rest = content.slice(shown.length);
+    const next = rest.match(/^\s+|^\S+\s*/)?.[0] || rest.charAt(0);
+    // A fixed 45 ms per word looked mechanical and far too fast. Use a small
+    // human-like jitter, with natural pauses at punctuation/newlines. This is
+    // still fast enough that long agent answers do not take minutes to reveal.
+    const punctuationPause = /[.!?]["')\]]?\s*$/.test(next)
+      ? 230
+      : /[,;:]["')\]]?\s*$/.test(next)
+        ? 110
+        : /\n/.test(next)
+          ? 140
+          : 0;
+    const delay = 105 + Math.floor(Math.random() * 90) + punctuationPause;
     const timer = window.setTimeout(() => {
-      const rest = content.slice(shown.length);
       // Preserve whitespace/newlines exactly; otherwise reveal one word plus
       // its following spaces, giving a natural typing cadence.
-      const next = rest.match(/^\s+|^\S+\s*/)?.[0] || rest.charAt(0);
       setShown((current) => current + next);
-    }, 45);
+    }, delay);
     return () => window.clearTimeout(timer);
   }, [content, shown]);
 

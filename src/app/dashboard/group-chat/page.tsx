@@ -26,16 +26,30 @@ export default function GroupChatPage() {
   const [message, setMessage] = useState("");
 
   const loadRooms = useCallback(async () => {
-    const [groupRes, modelRes] = await Promise.all([fetch("/api/group-chat"), fetch("/api/chat/models")]);
-    const groupData = await groupRes.json();
-    const modelData = await modelRes.json().catch(() => ({ models: [] }));
-    if (!groupRes.ok) throw new Error(groupData?.error || "Gagal memuat group chat.");
-    setRooms(groupData.rooms || []);
-    setAgents(groupData.agents || []);
-    setModel(groupData.defaultModel || "hermes");
-    setModels((modelData.models || []).map((m: { id: string; featured: boolean }) => ({ id: m.id, featured: m.featured })));
-    if (!room && groupData.rooms?.[0]) setRoom(groupData.rooms[0]);
-  }, [room]);
+    try {
+      const [groupRes, modelRes] = await Promise.all([
+        fetch("/api/group-chat", { cache: "no-store" }),
+        fetch("/api/chat/models", { cache: "no-store" }),
+      ]);
+      const groupData = await groupRes.json();
+      const modelData = await modelRes.json().catch(() => ({ models: [] }));
+      if (!groupRes.ok) throw new Error(groupData?.error || "Gagal memuat group chat.");
+      setRooms(groupData.rooms || []);
+      setAgents(groupData.agents || []);
+      setModel(groupData.defaultModel || "hermes");
+      setModels((modelData.models || []).map((m: { id: string; featured: boolean }) => ({ id: m.id, featured: m.featured })));
+      // Functional update avoids putting `room` in this callback's dependency
+      // list. Previously selecting a room recreated loadRooms and triggered the
+      // bootstrap effect again.
+      setRoom((current) => current || groupData.rooms?.[0] || null);
+      setMessage("");
+    } finally {
+      // Critical first-run path: when there are zero rooms there is no
+      // openRoom() call to clear loading. Leaving this true disabled the
+      // "Room baru" button forever, so a room could never be created.
+      setLoading(false);
+    }
+  }, []);
 
   const openRoom = useCallback(async (roomId: string) => {
     setLoading(true);
@@ -56,7 +70,7 @@ export default function GroupChatPage() {
     }
   }, []);
 
-  useEffect(() => { void loadRooms().catch((e) => { setMessage((e as Error).message); setLoading(false); }); }, [loadRooms]);
+  useEffect(() => { void loadRooms().catch((e) => setMessage((e as Error).message)); }, [loadRooms]);
   useEffect(() => { if (room) void openRoom(room.id); }, [room?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!room) return;
