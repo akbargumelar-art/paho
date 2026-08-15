@@ -1168,7 +1168,7 @@ export default function TasksPage() {
               {/* Icon picker */}
               <div>
                 <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-2 block">Ikon</Label>
-                <div className="grid grid-cols-8 gap-1.5">
+                <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8">
                   {GROUP_ICONS.map(icon => (
                     <button
                       key={icon}

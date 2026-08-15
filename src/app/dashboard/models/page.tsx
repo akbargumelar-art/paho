@@ -109,7 +109,7 @@ export default function ModelsPage() {
 
       {message && <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground">{message}</div>}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
         {[
           ["Total", counts.total], ["Sehat", counts.healthy], ["Lambat", counts.slow], ["Gagal", counts.failed], ["Belum dicek", counts.unchecked],
         ].map(([label, value]) => (
@@ -144,7 +144,7 @@ export default function ModelsPage() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       {statusIcon(model.health?.status)}
-                      <span className="truncate font-mono text-xs font-medium">{model.id}</span>
+                      <span className="min-w-0 break-all font-mono text-xs font-medium">{model.id}</span>
                       {model.featured && <Badge className="text-[10px]">unggulan</Badge>}
                       <Badge variant="outline" className="text-[10px]">{model.family}</Badge>
                     </div>

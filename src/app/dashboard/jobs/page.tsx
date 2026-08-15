@@ -68,7 +68,7 @@ function JobsTable({ jobs, onSelect, onDelete, onRuntimeAction, busyJobId }: {
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full">
+      <table className="w-full min-w-[640px]">
         <thead>
           <tr className="border-b border-border">
             <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Job</th>

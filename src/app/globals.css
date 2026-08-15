@@ -405,3 +405,81 @@
 :root[data-compact="true"] .dashboard-main .space-y-5 > * + * { margin-top: 0.85rem; }
 :root[data-compact="true"] .dashboard-main .space-y-6 > * + * { margin-top: 1rem; }
 :root[data-compact="true"] .dashboard-main [data-slot="card-content"] { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+
+/* ---- Responsive hardening (desktop + mobile) ----
+   Goal: nothing clips horizontally. Wide content scrolls INSIDE its own
+   container instead of stretching the page, and flex/grid children are allowed
+   to shrink (min-width:auto is the usual cause of "terpotong" layouts). */
+
+.dashboard-shell,
+.dashboard-main {
+  max-width: 100%;
+}
+
+/* Page content must never create a horizontal page scrollbar. */
+.dashboard-main {
+  overflow-x: clip;
+}
+
+/* Let flex/grid children shrink below their content width. */
+.dashboard-main [data-slot="card"],
+.dashboard-main [data-slot="card-content"],
+.dashboard-main [data-slot="card-header"] {
+  min-width: 0;
+}
+
+/* Any wide table gets its own scroll area with momentum on touch. */
+.dashboard-main .overflow-x-auto {
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Long unbroken strings (paths, ids, model names) wrap instead of overflowing. */
+.dashboard-main pre,
+.dashboard-main code {
+  overflow-wrap: anywhere;
+}
+
+.dashboard-main pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Mono/badge text that is intentionally single-line still must not push layout. */
+.dashboard-main .truncate {
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  /* Cards on mobile: tighter horizontal padding buys ~16px of usable width. */
+  .dashboard-main [data-slot="card-content"],
+  .dashboard-main [data-slot="card-header"] {
+    padding-inline: 0.85rem;
+  }
+
+  /* Tap targets: keep interactive rows at least 40px tall. */
+  .dashboard-main button,
+  .dashboard-main a[class*="rounded"],
+  .dashboard-main select {
+    min-height: 2.5rem;
+  }
+
+  /* Buttons inside dense toolbars may opt out via .btn-compact. */
+  .dashboard-main .btn-compact {
+    min-height: 2.25rem;
+  }
+
+  /* Tables: shrink padding so a 700px table needs less scrolling. */
+  .dashboard-main table th,
+  .dashboard-main table td {
+    padding-inline: 0.6rem;
+  }
+}
+
+/* Wide screens: stop content from stretching into unreadable line lengths. */
+@media (min-width: 1600px) {
+  .dashboard-main {
+    max-width: 1560px;
+    margin-inline: auto;
+  }
+}

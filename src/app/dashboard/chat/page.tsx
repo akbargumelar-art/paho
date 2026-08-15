@@ -436,7 +436,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex h-[calc(100dvh-80px)] min-h-0 flex-col gap-4 fade-in-up max-md:h-auto max-md:min-h-[calc(100dvh-80px)]">
+    <div className="flex h-[calc(100dvh-132px)] min-h-0 flex-col gap-4 fade-in-up max-md:h-auto max-md:min-h-[calc(100dvh-80px)]">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -587,12 +587,12 @@ export default function ChatPage() {
       </Card>
 
       <form onSubmit={sendMessage} className="rounded-2xl border border-border bg-card p-3 shadow-lg">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Model</span>
+        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">Model</span>
           <select
             value={activeModel}
             onChange={(event) => setActiveModel(event.target.value)}
-            className="h-8 min-w-0 max-w-[60%] flex-1 rounded-lg border border-input bg-background px-2 text-xs sm:max-w-xs"
+            className="h-9 min-w-0 flex-1 basis-40 rounded-lg border border-input bg-background px-2 text-xs sm:max-w-xs sm:flex-none"
             disabled={loading}
             title="Model untuk pesan berikutnya"
           >

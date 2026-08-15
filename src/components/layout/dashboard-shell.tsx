@@ -6,6 +6,7 @@ import { useSession } from "@/lib/auth-client"
 import { useAppStore } from "@/lib/store"
 import { useSidebarStore } from "@/lib/sidebar-store"
 import { MobileTabBar, Sidebar } from "@/components/layout/sidebar"
+import { SectionTabs } from "@/components/layout/section-tabs"
 import { Topbar } from "@/components/layout/topbar"
 import { cn } from "@/lib/utils"
 
@@ -56,12 +57,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     <div className="dashboard-shell min-h-dvh bg-background max-md:bg-muted/30">
       <Sidebar />
       <div className={cn(
-        "transition-all duration-300",
+        "min-w-0 transition-all duration-300",
         collapsed ? "md:pl-[68px]" : "md:pl-[260px]",
         "pl-0"
       )}>
         <Topbar />
-        <main className="dashboard-main p-4 pb-[var(--dashboard-mobile-content-bottom)] md:p-6 md:pb-6">
+        <main className="dashboard-main min-w-0 p-4 pb-[var(--dashboard-mobile-content-bottom)] md:p-6 md:pb-6">
+          <SectionTabs />
           {children}
         </main>
       </div>

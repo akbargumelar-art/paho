@@ -201,9 +201,9 @@ export default function InsightsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex h-28 items-end gap-[3px]">
+              <div className="flex h-28 min-w-0 items-end gap-[2px] sm:gap-[3px]">
                 {data.days.map((day) => (
-                  <div key={day.date} className="group relative flex-1" title={`${day.date}: ${day.messages} pesan`}>
+                  <div key={day.date} className="group relative min-w-0 flex-1" title={`${day.date}: ${day.messages} pesan`}>
                     <div
                       className={cn("w-full rounded-t transition", day.messages > 0 ? "bg-primary/70 group-hover:bg-primary" : "bg-muted")}
                       style={{ height: `${Math.max(3, (day.messages / peak) * 100)}%` }}
@@ -211,7 +211,7 @@ export default function InsightsPage() {
                   </div>
                 ))}
               </div>
-              <div className="mt-2 flex justify-between text-[10px] text-muted-foreground">
+              <div className="mt-2 flex flex-wrap justify-between gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
                 <span>{data.days[0]?.date}</span>
                 <span>puncak {peak} pesan/hari</span>
                 <span>{data.days[data.days.length - 1]?.date}</span>

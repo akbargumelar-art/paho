@@ -262,7 +262,7 @@ export default function ProjectContextDetailPage() {
   if (!project) return <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">{error || "Project tidak ditemukan."}</div>;
 
   return (
-    <div className="flex h-[calc(100dvh-80px)] min-h-0 flex-col gap-4 fade-in-up max-md:h-auto max-md:min-h-[calc(100dvh-80px)]">
+    <div className="flex h-[calc(100dvh-132px)] min-h-0 flex-col gap-4 fade-in-up max-md:h-auto max-md:min-h-[calc(100dvh-80px)]">
       <div className="flex min-h-0 flex-1 flex-col gap-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
