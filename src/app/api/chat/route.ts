@@ -377,7 +377,7 @@ async function askHermes(agent: AgentConfig, prompt: string) {
   try {
     const { stdout, stderr } = await execFileAsync(HERMES_BIN, args, {
       timeout: 240_000,
-      maxBuffer: 1024 * 1024 * 2,
+      maxBuffer: 1024 * 1024 * 8,
       env: {
         ...process.env,
         PATH: `/root/.nvm/versions/node/v24.19.0/bin:${process.env.PATH || ""}`,
@@ -396,7 +396,14 @@ async function askHermes(agent: AgentConfig, prompt: string) {
     if (stderr) {
       throw new Error(clampText(stderr, 800));
     }
-    throw new Error("Hermes gagal memproses chat project.");
+    console.error("[paho-chat] hermes exec failed", {
+      message: err.message?.slice(0, 500),
+      code: (err as Error & { code?: string }).code,
+      signal: err.signal,
+      killed: err.killed,
+      promptChars: prompt.length,
+    });
+    throw new Error("Hermes gagal memproses chat project. Detail teknis sudah dicatat di log server.");
   }
 }
 
