@@ -7,7 +7,7 @@ import { useSidebarStore } from "@/lib/sidebar-store"
 import {
   LayoutDashboard, ListTodo, FolderKanban, Cpu, ScrollText,
   ShieldCheck, BookOpen, ClipboardCheck, ChevronLeft, ChevronRight, Zap, X,
-  MessageSquare, FileJson, Bell, Network, Boxes, Menu, Sunrise, BarChart3, KanbanSquare, FolderOpen
+  MessageSquare, FileJson, Bell, Network, Boxes, Menu, Sunrise, BarChart3, KanbanSquare, FolderOpen, TerminalSquare
 } from "lucide-react"
 
 type MenuItem = {
@@ -30,7 +30,8 @@ const menuGroups: MenuGroup[] = [
       { href: "/dashboard/insights", label: "Insights & Tampilan", icon: BarChart3 },
       { href: "/dashboard/models", label: "Model Management", icon: Cpu },
       { href: "/dashboard/kanban", label: "Kanban Task", icon: KanbanSquare },
-      { href: "/dashboard/files", label: "File Browser", icon: FolderOpen }
+      { href: "/dashboard/files", label: "File Browser", icon: FolderOpen },
+      { href: "/dashboard/console", label: "Console Aman", icon: TerminalSquare }
     ],
   },
   {
