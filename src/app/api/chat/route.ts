@@ -148,6 +148,7 @@ const AGENTS: Record<AgentId, AgentConfig> = {
 const DATA_DIR = "/root/paho/data/web-chat";
 const PROJECTS_PATH = path.join(DATA_DIR, "projects.json");
 const THREADS_PATH = path.join(DATA_DIR, "threads.json");
+const JOBS_PATH = path.join(DATA_DIR, "jobs.json");
 const CHAT_MODEL = process.env.PAHO_CHAT_MODEL || "hermes";
 const HERMES_BIN = process.env.PAHO_HERMES_BIN || "/root/.local/bin/hermes";
 const execFileAsync = promisify(execFile);
@@ -411,37 +412,116 @@ async function askHermes(agent: AgentConfig, prompt: string) {
 
 const MEMORY_EXTRACT_EVERY = 6;
 
-/**
- * Background generation: runs Hermes, extracts attachments, then updates the
- * pending assistant message in place. Because this is detached from the HTTP
- * request, it keeps running even when the browser tab is closed or the phone
- * is locked. The client re-syncs by polling GET.
- */
-async function runChatGeneration(params: {
-  agent: AgentConfig;
-  project: ChatProject | null;
-  activeProjectId: string;
+// ---- Persistent job queue (survives PM2/server restart) ----
+type ChatJob = {
+  id: string;
+  agentId: AgentId;
+  projectId: string;
   threadId: string;
   prompt: string;
-  historyBefore: ChatMessage[];
   assistantId: string;
-}) {
-  const { agent, project, activeProjectId, threadId, prompt, historyBefore, assistantId } = params;
+  status: "pending" | "running" | "done" | "error";
+  attempts: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// A "running" job older than this is assumed orphaned by a restart and reclaimed.
+const JOB_STALE_MS = 6 * 60_000;
+const JOB_MAX_ATTEMPTS = 2;
+let workerRunning = false;
+
+async function readJobs(): Promise<ChatJob[]> {
+  try {
+    const raw = await readFile(JOBS_PATH, "utf8");
+    const parsed = JSON.parse(raw) as { jobs?: ChatJob[] };
+    return Array.isArray(parsed.jobs) ? parsed.jobs : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveJobs(jobs: ChatJob[]) {
+  await mkdir(DATA_DIR, { recursive: true });
+  await writeFile(JOBS_PATH, JSON.stringify({ jobs: jobs.slice(-200) }, null, 2), "utf8");
+}
+
+async function enqueueJob(job: ChatJob) {
+  const jobs = await readJobs();
+  jobs.push(job);
+  await saveJobs(jobs);
+}
+
+/**
+ * Drains the job queue one job at a time. Idempotent: a single in-process lock
+ * prevents parallel drains. On startup / first request after a restart, any
+ * job left "pending" — or "running" but stale (its worker died with the old
+ * process) — is picked up and finished, so a chat is never lost to a restart.
+ */
+async function processQueue() {
+  if (workerRunning) return;
+  workerRunning = true;
+  try {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const jobs = await readJobs();
+      const now = Date.now();
+      let changed = false;
+      for (const job of jobs) {
+        if (job.status === "running" && now - Date.parse(job.updatedAt || "") > JOB_STALE_MS) {
+          job.status = "pending";
+          changed = true;
+        }
+      }
+      if (changed) await saveJobs(jobs);
+
+      const next = jobs.find((job) => job.status === "pending");
+      if (!next) break;
+
+      next.status = "running";
+      next.attempts = (next.attempts || 0) + 1;
+      next.updatedAt = nowIso();
+      await saveJobs(jobs);
+
+      await runJob(next);
+
+      // Remove the finished job from the queue.
+      const remaining = (await readJobs()).filter((job) => job.id !== next.id);
+      await saveJobs(remaining);
+    }
+  } finally {
+    workerRunning = false;
+  }
+}
+
+/**
+ * Executes one queued chat job: builds the prompt from persisted history, runs
+ * Hermes, then writes the answer back into the pending assistant message.
+ */
+async function runJob(job: ChatJob) {
+  const agent = AGENTS[job.agentId] || AGENTS.corla;
+  const project = await findProject(job.projectId);
+  const activeProjectId = project?.id || "none";
 
   const finalize = async (patch: Partial<ChatMessage>) => {
-    // Re-read the store fresh so we don't clobber concurrent writes.
-    const store = await readStore(agent.id, activeProjectId, threadId);
+    const store = await readStore(job.agentId, activeProjectId, job.threadId);
     const messages = store.messages.map((message) =>
-      message.id === assistantId ? { ...message, ...patch, pending: false } : message
+      message.id === job.assistantId ? { ...message, ...patch, pending: false } : message
     );
-    await saveStore(agent.id, activeProjectId, threadId, { messages });
+    await saveStore(job.agentId, activeProjectId, job.threadId, { messages });
     return messages;
   };
 
   try {
-    const promptWithContext = await buildPrompt(agent, project, historyBefore, prompt, threadId);
+    // History = everything before the pending assistant placeholder.
+    const store = await readStore(job.agentId, activeProjectId, job.threadId);
+    const historyBefore = store.messages.filter(
+      (message) => message.id !== job.assistantId && !(message.role === "assistant" && message.pending)
+    );
+
+    const promptWithContext = await buildPrompt(agent, project, historyBefore, job.prompt, job.threadId);
     const reply = await askHermes(agent, promptWithContext);
-    const attachmentResult = await extractAndSaveChatAttachments(reply, { projectId: activeProjectId, threadId });
+    const attachmentResult = await extractAndSaveChatAttachments(reply, { projectId: activeProjectId, threadId: job.threadId });
 
     const nextMessages = await finalize({
       content: attachmentResult.content,
@@ -450,16 +530,15 @@ async function runChatGeneration(params: {
       createdAt: nowIso(),
     });
 
-    // Summarization trigger
-    const summary = await readThreadSummary(threadId);
+    const summary = await readThreadSummary(job.threadId);
     if (needsSummarization(nextMessages.length, summary)) {
       const newSummary: ThreadSummary = {
-        threadId,
+        threadId: job.threadId,
         summary: makeThreadSummary(nextMessages),
         messageCount: nextMessages.length,
         generatedAt: nowIso(),
       };
-      await deleteThreadSummary(threadId).catch(() => undefined);
+      await deleteThreadSummary(job.threadId).catch(() => undefined);
       await saveThreadSummary(newSummary);
     }
 
@@ -471,10 +550,23 @@ async function runChatGeneration(params: {
     }
   } catch (error) {
     const err = error as Error;
-    await finalize({
-      content: `⚠️ Gagal menyelesaikan jawaban: ${clampText(err.message || "kesalahan tidak diketahui", 400)}`,
-      error: true,
-    }).catch(() => undefined);
+    // Let the queue retry a transient failure; surface the error only once we
+    // are out of attempts so the user isn't left with a spinner forever.
+    if (job.attempts >= JOB_MAX_ATTEMPTS) {
+      await finalize({
+        content: `⚠️ Gagal menyelesaikan jawaban: ${clampText(err.message || "kesalahan tidak diketahui", 400)}`,
+        error: true,
+      }).catch(() => undefined);
+    } else {
+      // Re-queue for another attempt.
+      const jobs = await readJobs();
+      const target = jobs.find((item) => item.id === job.id);
+      if (target) {
+        target.status = "pending";
+        target.updatedAt = nowIso();
+        await saveJobs(jobs);
+      }
+    }
   }
 }
 
@@ -553,6 +645,15 @@ export async function GET(req: Request) {
   const store = await readStore(agentId, activeProjectId, threadId);
   const pending = store.messages.some((message) => message.role === "assistant" && message.pending);
 
+  // A pending message that still has a queued job means the worker may have
+  // died with a previous process. Kick the queue so it resumes on this poll.
+  if (pending) {
+    const jobs = await readJobs();
+    if (jobs.some((job) => job.status === "pending" || job.status === "running")) {
+      void processQueue();
+    }
+  }
+
   return NextResponse.json({
     agent: { id: agent.id, name: agent.name, label: agent.label, domain: agent.domain, tone: agent.tone },
     project: publicProject(project),
@@ -622,21 +723,26 @@ export async function POST(req: Request) {
       createdAt: nowIso(),
       pending: true,
     };
-    const historyBefore = [...store.messages];
     const nextMessages = [...store.messages, userMessage, assistantMessage];
     await saveStore(agentId, activeProjectId, threadId, { messages: nextMessages });
     const thread = await touchThread(threadId, prompt);
 
-    // Detached background generation (not awaited).
-    void runChatGeneration({
-      agent,
-      project,
-      activeProjectId,
+    // Enqueue a durable job, then kick the worker. The job file survives a
+    // PM2/server restart, and the worker reclaims stale/pending jobs on the
+    // next request, so generation is never lost even if the process dies.
+    await enqueueJob({
+      id: id(),
+      agentId,
+      projectId: activeProjectId,
       threadId,
       prompt,
-      historyBefore,
       assistantId: assistantMessage.id,
+      status: "pending",
+      attempts: 0,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
     });
+    void processQueue();
 
     return NextResponse.json({
       ok: true,
