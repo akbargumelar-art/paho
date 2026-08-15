@@ -160,7 +160,7 @@ export default function ChatPage() {
   const [pending, setPending] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [activeModel, setActiveModel] = useState("hermes");
-  const [showAllModels, setShowAllModels] = useState(false);
+  const [showAllModels] = useState(false);
   const voice = useVoiceInput((text) => setInput((prev) => (prev ? `${prev} ${text}` : text)));
   const playback = useVoicePlayback();
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -647,26 +647,6 @@ export default function ChatPage() {
       </Card>
 
       <form onSubmit={sendMessage} className="rounded-2xl border border-border bg-card p-3 shadow-lg">
-        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">Model</span>
-          <select
-            value={activeModel}
-            onChange={(event) => setActiveModel(event.target.value)}
-            className="h-9 min-w-0 flex-1 basis-40 rounded-lg border border-input bg-background px-2 text-xs sm:max-w-xs sm:flex-none"
-            disabled={loading}
-            title="Model untuk pesan berikutnya"
-          >
-            {(showAllModels ? models : models.filter((model) => model.featured || model.id === activeModel)).map((model) => (
-              <option key={model.id} value={model.id}>{model.health?.status === "healthy" ? "● " : model.health?.status === "slow" ? "◐ " : model.health?.status === "failed" ? "× " : ""}{model.id}</option>
-            ))}
-          </select>
-          {models.length > 1 && (
-            <button type="button" onClick={() => setShowAllModels((s) => !s)} className="text-[10px] text-primary underline-offset-2 hover:underline">
-              {showAllModels ? "unggulan saja" : `semua (${models.length})`}
-            </button>
-          )}
-          <span className="ml-auto text-[10px] text-muted-foreground">bisa ganti kapan saja</span>
-        </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
           <div className="min-w-0 flex-1">
             <Textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={onKeyDown} placeholder={`Tulis pesan untuk ${currentAgent.name}${currentProject ? ` di project ${currentProject.title}` : ""}...`} className="max-h-48 min-h-[52px] w-full resize-none border-0 bg-transparent focus-visible:ring-0" disabled={loading} />
@@ -674,9 +654,20 @@ export default function ChatPage() {
           </div>
           <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:shrink-0 sm:items-end">
             <select
+              value={activeModel}
+              onChange={(event) => setActiveModel(event.target.value)}
+              className="h-9 min-w-0 w-24 shrink-0 rounded-lg border border-input bg-background px-2 text-[10px] sm:w-32"
+              disabled={loading}
+              title="Model untuk pesan berikutnya"
+            >
+              {(showAllModels ? models : models.filter((item) => item.featured || item.id === activeModel)).map((item) => (
+                <option key={item.id} value={item.id}>{item.health?.status === "healthy" ? "● " : item.health?.status === "slow" ? "◐ " : item.health?.status === "failed" ? "× " : ""}{item.id}</option>
+              ))}
+            </select>
+            <select
               value={activeAgent}
               onChange={(event) => setActiveAgent(event.target.value as AgentId)}
-              className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-xs sm:w-32 sm:flex-none md:w-40"
+              className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-[10px] sm:w-32 sm:flex-none md:w-40"
               disabled={loading}
               title="Pilih agent"
             >
@@ -691,13 +682,13 @@ export default function ChatPage() {
                 variant={voice.recording ? "default" : "outline"}
                 onClick={voice.toggle}
                 disabled={loading || pending || voice.transcribing}
-                className={cn("h-11 w-11 shrink-0 rounded-xl", voice.recording && "animate-pulse")}
+                className={cn("h-9 w-9 shrink-0 rounded-lg", voice.recording && "animate-pulse")}
                 title={voice.recording ? "Stop rekam & transkrip" : "Rekam suara"}
               >
                 {voice.transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : voice.recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
               </Button>
             )}
-            <Button type="submit" size="icon" className="h-11 w-11 shrink-0 rounded-xl" disabled={!input.trim() || loading || pending}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</Button>
+            <Button type="submit" size="icon" className="h-9 w-9 shrink-0 rounded-lg" disabled={!input.trim() || loading || pending} title="Kirim" aria-label="Kirim">{loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}</Button>
           </div>
         </div>
         {(voice.recording || voice.transcribing || voice.error) && (

@@ -152,6 +152,7 @@ export default function GroupChatPage() {
   const shownModels = useMemo(() => (models.length ? models.filter((m) => m.featured || m.id === model).slice(0, 12) : [{ id: "hermes", featured: true }]), [models, model]);
   const roundtable = mode === "roundtable";
   const tooFewForRoundtable = roundtable && selectedAgents.length < 2;
+  const firstPendingId = useMemo(() => messages.find((m) => m.pending)?.id || "", [messages]);
 
   return (
     <div className="space-y-5 fade-in-up">
@@ -268,7 +269,10 @@ export default function GroupChatPage() {
                               )}
                             </div>
                           )}
-                          <div className="whitespace-pre-wrap">{m.content || (m.pending ? "sedang memproses…" : "")}{m.pending && <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse bg-primary/70" />}</div>
+                          <div className="whitespace-pre-wrap">
+                            {m.content || (m.pending ? (m.id === firstPendingId ? "sedang memproses…" : "menunggu giliran…") : "")}
+                            {m.pending && m.id === firstPendingId && <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse bg-primary/70" />}
+                          </div>
                           <div className="mt-2 text-[10px] opacity-60">{new Date(m.createdAt).toLocaleTimeString()}</div>
                         </div>
                       </div>
@@ -280,22 +284,21 @@ export default function GroupChatPage() {
               )}
 
               <div className="sticky bottom-0 z-10 mt-3 border-t border-border bg-card/95 pt-3 backdrop-blur supports-[backdrop-filter]:bg-card/80">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_180px]">
+                <div className="space-y-2">
                   <textarea
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     placeholder={roundtable ? "Topik yang mau didiskusikan para agent..." : "Tulis pesan untuk dibahas para agent..."}
-                    className="min-h-[88px] rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                    className="min-h-[72px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
                   />
-                  <div className="space-y-2">
-                    <select value={model} onChange={(e) => setModel(e.target.value)} className="h-10 w-full rounded-lg border border-input bg-background px-3 text-xs">
+                  <div className="flex items-center gap-2">
+                    <p className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">{roundtable ? `Maks ${maxRounds} ronde · bisa berhenti lebih cepat` : "Model untuk pesan berikutnya"}</p>
+                    <select value={model} onChange={(e) => setModel(e.target.value)} className="h-8 w-24 shrink-0 rounded-lg border border-input bg-background px-2 text-[10px] sm:w-36" title="Model">
                       {shownModels.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
                     </select>
-                    <Button className="h-10 w-full gap-1.5 text-xs" disabled={!room || sending || !input.trim() || selectedAgents.length === 0 || tooFewForRoundtable} onClick={() => void send()}>
+                    <Button size="icon" className="h-8 w-8 shrink-0 rounded-lg" disabled={!room || sending || !input.trim() || selectedAgents.length === 0 || tooFewForRoundtable} onClick={() => void send()} title={roundtable ? `Mulai diskusi ${selectedAgents.length} agent` : `Kirim ke ${selectedAgents.length} agent`} aria-label={roundtable ? `Mulai diskusi ${selectedAgents.length} agent` : `Kirim ke ${selectedAgents.length} agent`}>
                       {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                      {roundtable ? `Mulai diskusi ${selectedAgents.length} agent` : `Kirim ke ${selectedAgents.length} agent`}
                     </Button>
-                    <p className="text-[10px] text-muted-foreground">{roundtable ? `Maksimal ${maxRounds} ronde, bisa berhenti lebih cepat.` : "Model berlaku untuk ronde pesan berikutnya."}</p>
                   </div>
                 </div>
               </div>

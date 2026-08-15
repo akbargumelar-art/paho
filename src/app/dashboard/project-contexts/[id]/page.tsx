@@ -24,6 +24,7 @@ type ChatMessage = { id: string; role: "user" | "assistant"; content: string; cr
 type ChatThread = { id: string; title: string; agentId: AgentId; projectId: string; status?: "active" | "archived"; createdAt: string; updatedAt: string };
 type ProjectMemory = { summary: string; facts: string[]; decisions: string[]; todos: string[]; preferences: string[] };
 type MemoryStats = { chunkCount: number; totalTokensEstimate: number; sources: string[]; updatedAt: string } | null;
+type ModelOption = { id: string; featured?: boolean; health?: { status?: string } };
 
 const fallbackAgents: Agent[] = [
   { id: "corla", name: "Corla", label: "Core coordinator", domain: "Lintas domain", tone: "text-hermes" },
@@ -54,6 +55,8 @@ export default function ProjectContextDetailPage() {
   const [project, setProject] = useState<ChatProject | null>(null);
   const [agents, setAgents] = useState<Agent[]>(fallbackAgents);
   const [activeAgent, setActiveAgent] = useState<AgentId>("corla");
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [activeModel, setActiveModel] = useState("hermes");
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -75,6 +78,7 @@ export default function ProjectContextDetailPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const currentAgent = useMemo(() => agents.find((agent) => agent.id === activeAgent) || fallbackAgents[0], [activeAgent, agents]);
+  const shownModels = useMemo(() => (models.length ? models.filter((item) => item.featured || item.id === activeModel).slice(0, 12) : [{ id: "hermes", featured: true }]), [models, activeModel]);
   const CurrentIcon = agentIcons[currentAgent.id] || Bot;
 
   const loadProject = async () => {
@@ -115,6 +119,15 @@ export default function ProjectContextDetailPage() {
 
   useEffect(() => { void loadProject(); }, [projectId]);
   useEffect(() => { void fetchMemory(); }, [projectId]);
+  useEffect(() => {
+    void fetch("/api/chat/models", { cache: "no-store" })
+      .then((res) => readJson(res))
+      .then((data) => {
+        setModels(data.models || []);
+        if (data.defaultModel) setActiveModel(data.defaultModel);
+      })
+      .catch(() => setModels([{ id: "hermes", featured: true }]));
+  }, []);
   useEffect(() => {
     if (!project) return;
     setActiveThreadId("");
@@ -186,7 +199,7 @@ export default function ProjectContextDetailPage() {
     setChatLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent: activeAgent, projectId, threadId: activeThreadId, message: text }) });
+      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent: activeAgent, projectId, threadId: activeThreadId, message: text, model: activeModel }) });
       const data = await readJson(res);
       if (!res.ok) throw new Error(data?.error || "Gagal mengirim pesan.");
       setMessages(data.messages || []);
@@ -361,8 +374,9 @@ export default function ProjectContextDetailPage() {
               <p className="px-3 pt-1 text-[10px] text-muted-foreground">Enter untuk kirim · Shift+Enter untuk baris baru</p>
             </div>
             <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:shrink-0 sm:items-end">
-              <select value={activeAgent} onChange={(event) => setActiveAgent(event.target.value as AgentId)} className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-xs sm:w-32 sm:flex-none md:w-40" disabled={chatLoading}>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select>
-              <Button type="submit" size="icon" className="h-11 w-11 shrink-0 rounded-xl" disabled={!input.trim() || chatLoading || pending}>{chatLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</Button>
+              <select value={activeModel} onChange={(event) => setActiveModel(event.target.value)} className="h-9 min-w-0 w-24 shrink-0 rounded-lg border border-input bg-background px-2 text-[10px] sm:w-32" disabled={chatLoading} title="Model untuk pesan berikutnya">{shownModels.map((item) => <option key={item.id} value={item.id}>{item.health?.status === "healthy" ? "● " : item.health?.status === "slow" ? "◐ " : item.health?.status === "failed" ? "× " : ""}{item.id}</option>)}</select>
+              <select value={activeAgent} onChange={(event) => setActiveAgent(event.target.value as AgentId)} className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-[10px] sm:w-32 sm:flex-none md:w-40" disabled={chatLoading}>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select>
+              <Button type="submit" size="icon" className="h-9 w-9 shrink-0 rounded-lg" disabled={!input.trim() || chatLoading || pending} title="Kirim" aria-label="Kirim">{chatLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}</Button>
             </div>
           </div>
         </form>
