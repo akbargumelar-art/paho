@@ -28,6 +28,7 @@ const menuGroups: MenuGroup[] = [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
       { href: "/dashboard/brief", label: "Morning Brief", icon: Sunrise },
       { href: "/dashboard/insights", label: "Insights & Tampilan", icon: BarChart3 },
+      { href: "/dashboard/models", label: "Model Management", icon: Cpu }
     ],
   },
   {

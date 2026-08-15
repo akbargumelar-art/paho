@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthSession, unauthorized } from "@/lib/api-auth";
+import { readHealth } from "@/lib/model-health";
 
 export const runtime = "nodejs";
 
@@ -53,7 +54,13 @@ export async function GET() {
     }
 
     const featured = FEATURED.filter((id) => seen.has(id));
-    const models = ids.map((id) => ({ id, family: familyOf(id), featured: featured.includes(id) }));
+    const health = await readHealth();
+    const models = ids.map((id) => ({
+      id,
+      family: familyOf(id),
+      featured: featured.includes(id),
+      health: health.models[id] || null,
+    }));
 
     return NextResponse.json({ models, featured, total: models.length, default: "hermes" });
   } catch (error) {

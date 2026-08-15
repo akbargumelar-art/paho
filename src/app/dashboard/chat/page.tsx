@@ -19,7 +19,8 @@ type ProjectDomain = "general" | "work" | "personal" | "business";
 type Agent = { id: AgentId; name: string; label: string; domain: string; tone: string };
 type ChatAttachment = { id: string; name: string; type: string; size: number; path: string; createdAt: string };
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string; createdAt: string; attachments?: ChatAttachment[]; pending?: boolean; error?: boolean; model?: string };
-type ModelOption = { id: string; family: string; featured: boolean };
+type ModelHealth = { status: "healthy" | "slow" | "failed"; latencyMs: number | null };
+type ModelOption = { id: string; family: string; featured: boolean; health?: ModelHealth | null };
 type UploadedFile = { id: string; name: string; type: string; size: number; path: string; uploadedAt: string; extractedChars: number };
 type ChatProject = {
   id: string;
@@ -596,7 +597,7 @@ export default function ChatPage() {
             title="Model untuk pesan berikutnya"
           >
             {(showAllModels ? models : models.filter((model) => model.featured || model.id === activeModel)).map((model) => (
-              <option key={model.id} value={model.id}>{model.id}</option>
+              <option key={model.id} value={model.id}>{model.health?.status === "healthy" ? "● " : model.health?.status === "slow" ? "◐ " : model.health?.status === "failed" ? "× " : ""}{model.id}</option>
             ))}
           </select>
           {models.length > 1 && (
