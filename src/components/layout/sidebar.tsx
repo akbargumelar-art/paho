@@ -7,7 +7,7 @@ import { useSidebarStore } from "@/lib/sidebar-store"
 import {
   LayoutDashboard, ListTodo, FolderKanban, Cpu, ScrollText,
   ShieldCheck, BookOpen, ClipboardCheck, ChevronLeft, ChevronRight, Zap, X,
-  MessageSquare, FileJson, Bell, Network, Boxes, Menu
+  MessageSquare, FileJson, Bell, Network, Boxes, Menu, Sunrise
 } from "lucide-react"
 
 type MenuItem = {
@@ -26,6 +26,7 @@ const menuGroups: MenuGroup[] = [
     title: "Utama",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/dashboard/brief", label: "Morning Brief", icon: Sunrise },
     ],
   },
   {
