@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Archive, Bot, BriefcaseBusiness, FileText, FolderKanban, Heart, Loader2, MessageSquare, Paperclip, Pencil, Plus, RotateCcw, Send, Sparkles, Trash2, User, Zap } from "lucide-react";
+import { Archive, Bot, BriefcaseBusiness, FileText, FolderKanban, Heart, Loader2, MessageSquare, Mic, Paperclip, Pencil, Plus, RotateCcw, Send, Sparkles, Square, Trash2, User, Volume2, VolumeX, Zap } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { AttachmentViewer } from "@/components/attachment-viewer";
+import { useVoiceInput, useVoicePlayback } from "@/lib/use-voice";
 
 type AgentId = "corla" | "oca" | "gadis" | "priska" | "bunga";
 type ProjectDomain = "general" | "work" | "personal" | "business";
@@ -100,6 +101,8 @@ export default function ChatPage() {
   const [projectForm, setProjectForm] = useState<ProjectForm>(emptyForm);
   const [uploading, setUploading] = useState(false);
   const [pending, setPending] = useState(false);
+  const voice = useVoiceInput((text) => setInput((prev) => (prev ? `${prev} ${text}` : text)));
+  const playback = useVoicePlayback();
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -531,7 +534,20 @@ export default function ChatPage() {
                       )
                     ) : <div className="whitespace-pre-wrap">{message.content}</div>}
                     {Boolean(message.attachments?.length) && <div className="mt-3 flex flex-col gap-2">{message.attachments?.map((file) => <div key={file.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-foreground">{file.name}</span><span className="text-[11px] text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</span><button type="button" onClick={() => setViewerFile({ id: file.id, name: file.name, size: file.size })} className="rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:opacity-90">Lihat</button><a href={attachmentUrl(file.id)} download={file.name} className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-primary hover:bg-background">Download</a></div>)}</div>}
-                    <div className={cn("mt-2 text-[10px] opacity-60", message.role === "user" ? "text-right" : "text-left")}>{new Date(message.createdAt).toLocaleTimeString()}</div>
+                    <div className={cn("mt-2 flex items-center gap-2 text-[10px] opacity-60", message.role === "user" ? "justify-end" : "justify-start")}>
+                      <span>{new Date(message.createdAt).toLocaleTimeString()}</span>
+                      {message.role === "assistant" && !message.pending && message.content && (
+                        <button
+                          type="button"
+                          onClick={() => void playback.speak(message.id, message.content)}
+                          className="flex items-center gap-1 rounded px-1 py-0.5 opacity-80 transition hover:bg-background hover:opacity-100"
+                          title={playback.speakingId === message.id ? "Stop suara" : "Dengarkan jawaban"}
+                        >
+                          {playback.loadingId === message.id ? <Loader2 className="h-3 w-3 animate-spin" /> : playback.speakingId === message.id ? <VolumeX className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
+                          {playback.speakingId === message.id ? "Stop" : "Dengarkan"}
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {message.role === "user" && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-slate-100"><User className="h-4 w-4" /></div>}
                 </div>
@@ -561,9 +577,27 @@ export default function ChatPage() {
                 <option key={agent.id} value={agent.id}>{agent.name}</option>
               ))}
             </select>
+            {voice.supported && (
+              <Button
+                type="button"
+                size="icon"
+                variant={voice.recording ? "default" : "outline"}
+                onClick={voice.toggle}
+                disabled={loading || pending || voice.transcribing}
+                className={cn("h-11 w-11 shrink-0 rounded-xl", voice.recording && "animate-pulse")}
+                title={voice.recording ? "Stop rekam & transkrip" : "Rekam suara"}
+              >
+                {voice.transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : voice.recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </Button>
+            )}
             <Button type="submit" size="icon" className="h-11 w-11 shrink-0 rounded-xl" disabled={!input.trim() || loading || pending}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</Button>
           </div>
         </div>
+        {(voice.recording || voice.transcribing || voice.error) && (
+          <p className={cn("px-3 pt-2 text-[10px]", voice.error ? "text-destructive" : "text-muted-foreground")}>
+            {voice.error || (voice.recording ? "🎙️ Merekam… tekan stop untuk transkrip" : "Mentranskrip suara…")}
+          </p>
+        )}
       </form>
       {viewerFile && <AttachmentViewer id={viewerFile.id} name={viewerFile.name} size={viewerFile.size} onClose={() => setViewerFile(null)} />}
     </div>
