@@ -273,6 +273,12 @@ function publicProject(project: ChatProject | null) {
   return { id, title, domain, status, instruction, knowledge, uploadedFiles, createdAt, updatedAt, archivedAt };
 }
 
+function clampText(value: string, max: number) {
+  const text = String(value || "").trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}\n\n[...dipotong ${text.length - max} karakter agar prompt tetap ringan...]`;
+}
+
 function buildPrompt(agent: AgentConfig, project: ChatProject | null, history: ChatMessage[], prompt: string) {
   const intro = [
     agent.systemPrompt,
@@ -288,18 +294,18 @@ function buildPrompt(agent: AgentConfig, project: ChatProject | null, history: C
       `Nama project: ${project.title}`,
       `Domain project: ${project.domain}`,
       "Instruksi project:",
-      project.instruction || "(belum ada instruksi khusus)",
+      clampText(project.instruction || "(belum ada instruksi khusus)", 6_000),
       "Knowledge / catatan project:",
-      project.knowledge || "(belum ada knowledge khusus)",
+      clampText(project.knowledge || "(belum ada knowledge khusus)", 18_000),
       "=== END PROJECT CONTEXT ==="
     );
   }
 
   intro.push("", "Riwayat percakapan terakhir untuk agent + project ini:");
 
-  const recent = history.slice(-12).flatMap((m) => [
+  const recent = history.slice(-8).flatMap((m) => [
     `${m.role === "user" ? "User" : agent.name}:`,
-    m.content,
+    clampText(m.content, 1_500),
     "",
   ]);
 
@@ -332,18 +338,30 @@ async function askHermes(agent: AgentConfig, prompt: string) {
     args.unshift("--profile", agent.profile);
   }
 
-  const { stdout, stderr } = await execFileAsync(HERMES_BIN, args, {
-    timeout: 120_000,
-    maxBuffer: 1024 * 1024 * 2,
-    env: {
-      ...process.env,
-      PATH: `/root/.nvm/versions/node/v24.19.0/bin:${process.env.PATH || ""}`,
-    },
-  });
+  try {
+    const { stdout, stderr } = await execFileAsync(HERMES_BIN, args, {
+      timeout: 240_000,
+      maxBuffer: 1024 * 1024 * 2,
+      env: {
+        ...process.env,
+        PATH: `/root/.nvm/versions/node/v24.19.0/bin:${process.env.PATH || ""}`,
+      },
+    });
 
-  const text = cleanHermesOutput(stdout || stderr || "");
-  if (!text) throw new Error("Hermes tidak mengembalikan jawaban.");
-  return text;
+    const text = cleanHermesOutput(stdout || stderr || "");
+    if (!text) throw new Error("Hermes tidak mengembalikan jawaban.");
+    return text;
+  } catch (error) {
+    const err = error as Error & { stdout?: string; stderr?: string; signal?: string; killed?: boolean };
+    const stderr = cleanHermesOutput(err.stderr || err.stdout || "");
+    if (err.killed || err.signal === "SIGTERM") {
+      throw new Error("Agent terlalu lama menjawab. Coba ringkas context project atau pecah file context menjadi lebih kecil.");
+    }
+    if (stderr) {
+      throw new Error(clampText(stderr, 800));
+    }
+    throw new Error("Hermes gagal memproses chat project.");
+  }
 }
 
 export async function GET(req: Request) {
