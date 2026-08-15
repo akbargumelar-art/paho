@@ -7,7 +7,7 @@ import { useSidebarStore } from "@/lib/sidebar-store"
 import {
   LayoutDashboard, ListTodo, FolderKanban, Cpu, ScrollText,
   ShieldCheck, BookOpen, ClipboardCheck, ChevronLeft, ChevronRight, Zap, X,
-  MessageSquare, FileJson, Bell, Network, Boxes, Menu, Sunrise, BarChart3, KanbanSquare, FolderOpen, TerminalSquare
+  MessageSquare, FileJson, Bell, Network, Boxes, Menu, Sunrise, BarChart3, KanbanSquare, FolderOpen, TerminalSquare, MessagesSquare
 } from "lucide-react"
 
 type MenuItem = {
@@ -38,6 +38,7 @@ const menuGroups: MenuGroup[] = [
     title: "Chat & Project",
     items: [
       { href: "/dashboard/chat", label: "Chat", icon: MessageSquare },
+      { href: "/dashboard/group-chat", label: "Group Chat", icon: MessagesSquare },
       { href: "/dashboard/project-contexts", label: "Project Context", icon: FolderKanban },
       { href: "/dashboard/projects", label: "Proyek Live", icon: FolderKanban },
     ],
