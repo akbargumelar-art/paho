@@ -366,3 +366,42 @@
     padding-bottom: calc(1rem + env(safe-area-inset-bottom));
   }
 }
+
+/* ---- Paho appearance preferences (accent, font size, density) ---- */
+/* Accent overrides applied via data-accent on <html>; oklch keeps the same
+   lightness/chroma feel as the default violet, only the hue rotates. */
+:root[data-accent="sky"] {
+  --primary: oklch(0.65 0.2 235);
+  --ring: oklch(0.65 0.2 235);
+  --hermes: oklch(0.65 0.2 235);
+  --sidebar-primary: oklch(0.65 0.2 235);
+}
+:root[data-accent="emerald"] {
+  --primary: oklch(0.68 0.18 160);
+  --ring: oklch(0.68 0.18 160);
+  --hermes: oklch(0.68 0.18 160);
+  --sidebar-primary: oklch(0.68 0.18 160);
+}
+:root[data-accent="amber"] {
+  --primary: oklch(0.75 0.17 75);
+  --ring: oklch(0.75 0.17 75);
+  --hermes: oklch(0.75 0.17 75);
+  --sidebar-primary: oklch(0.75 0.17 75);
+}
+:root[data-accent="rose"] {
+  --primary: oklch(0.66 0.21 15);
+  --ring: oklch(0.66 0.21 15);
+  --hermes: oklch(0.66 0.21 15);
+  --sidebar-primary: oklch(0.66 0.21 15);
+}
+
+/* Font scale: only the root size changes so rem-based spacing scales with it. */
+:root[data-font-size="small"] { font-size: 15px; }
+:root[data-font-size="normal"] { font-size: 16px; }
+:root[data-font-size="large"] { font-size: 17.5px; }
+:root[data-font-size="xlarge"] { font-size: 19px; }
+
+/* Compact density trims card padding without touching layout structure. */
+:root[data-compact="true"] .dashboard-main .space-y-5 > * + * { margin-top: 0.85rem; }
+:root[data-compact="true"] .dashboard-main .space-y-6 > * + * { margin-top: 1rem; }
+:root[data-compact="true"] .dashboard-main [data-slot="card-content"] { padding-top: 0.75rem; padding-bottom: 0.75rem; }
