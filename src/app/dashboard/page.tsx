@@ -38,7 +38,7 @@ export default function DashboardPage() {
   const highRiskPending = approvals.filter(a => (a.riskLevel === "high" || a.riskLevel === "critical") && a.reviewStatus === "pending")
   const [targetToday, setTargetToday] = useState(0)
   const [pipelineWorkers, setPipelineWorkers] = useState<{worker:string;running:number;queued:number}[]>([])
-  const [recentOutputs, setRecentOutputs] = useState<{id:string;name:string;createdAt:string,size?:number}[]>([])
+  const [recentOutputs, setRecentOutputs] = useState<{id:string;name:string;jobName?:string;createdAt:string,size?:number}[]>([])
   useEffect(() => {
     const poll = setInterval(async () => { try { const r = await fetch("/api/dashboard/summary",{cache:"no-store"}); if(!r.ok)return; const d = await r.json(); if(d.targets){setTargetToday(d.targets.todayDone||0);setPipelineWorkers(d.pipeline?.workers||[]);setRecentOutputs(d.outputs?.items||[])} } catch {} },30_000);
     void fetch("/api/dashboard/summary").then(r=>{if(!r.ok)return;r.json().then(d=>{setTargetToday(d.targets?.todayDone||0);setPipelineWorkers(d.pipeline?.workers||[]);setRecentOutputs(d.outputs?.items||[])});}).catch(()=>{});
@@ -232,7 +232,7 @@ export default function DashboardPage() {
         <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div><p className="text-xs text-muted-foreground">Target Harian</p><p className="text-lg font-semibold mt-1">{targetToday >= 3 ? "✅ Min. 3 sudah tercapai" : `🔵 ${targetToday} selesai hari ini (min. 3)`}</p><p className="text-[10px] text-muted-foreground mt-1">{pipelineWorkers.reduce((s,w)=>s+w.running,0)} job sedang berjalan</p></div>
           <div><p className="text-xs text-muted-foreground">Pipeline Worker</p><div className="mt-1 flex flex-wrap gap-1"> {pipelineWorkers.map(w=><span key={w.worker} className="rounded border px-2 py-1 text-[10px]">{w.worker}: 🔴{w.running} 🟡{w.queued}</span>)}</div></div>
-          <div><p className="text-xs text-muted-foreground">Output Terbaru</p><ul className="mt-1 text-[11px] space-y-0.5"> {recentOutputs.slice(0,5).map(o=><li key={o.id} className="truncate">{o.name}</li>)}</ul></div>
+          <div><p className="text-xs text-muted-foreground">Output Terbaru</p><ul className="mt-1 text-[11px] space-y-0.5"> {recentOutputs.slice(0,5).map(o=><li key={o.id} className="truncate">{o.jobName || o.name}</li>)}</ul><Link href="/dashboard/outputs" className="mt-2 inline-flex text-[10px] text-primary hover:underline">Buka Output Center</Link></div>
         </CardContent>
       </Card>
 

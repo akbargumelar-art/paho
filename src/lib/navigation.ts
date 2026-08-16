@@ -2,7 +2,7 @@ import {
   LayoutDashboard, ListTodo, FolderKanban, Cpu, ScrollText,
   ShieldCheck, BookOpen, ClipboardCheck, MessageSquare, FileJson, Bell,
   Network, Boxes, Sunrise, BarChart3, KanbanSquare, FolderOpen,
-  TerminalSquare, MessagesSquare, SlidersHorizontal, Briefcase,
+  TerminalSquare, MessagesSquare, SlidersHorizontal, Briefcase, FileText,
 } from "lucide-react";
 
 export type NavIcon = typeof LayoutDashboard;
@@ -72,6 +72,7 @@ export const navSections: NavSection[] = [
       { href: "/dashboard/tasks", label: "Tugas & Pengingat", tabLabel: "Tugas", icon: ListTodo },
       { href: "/dashboard/reminders", label: "Reminder Center", tabLabel: "Reminder", icon: Bell },
       { href: "/dashboard/jobs", label: "Jobs & Handoff", tabLabel: "Jobs", icon: Cpu },
+      { href: "/dashboard/outputs", label: "Output Center", tabLabel: "Output", icon: FileText },
       { href: "/dashboard/logs", label: "Log Eksekusi", tabLabel: "Log", icon: ScrollText },
     ],
   },
