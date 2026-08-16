@@ -60,6 +60,7 @@ export const navSections: NavSection[] = [
       { href: "/dashboard/group-chat", label: "Group Chat", tabLabel: "Group", icon: MessagesSquare },
       { href: "/dashboard/project-contexts", label: "Project Context", tabLabel: "Project Context", icon: FolderKanban },
       { href: "/dashboard/projects", label: "Proyek Live", tabLabel: "Proyek Live", icon: Briefcase },
+      { href: "/dashboard/bansos-ai", label: "Bansos API AI", tabLabel: "Bansos AI", icon: Boxes },
     ],
   },
   {
