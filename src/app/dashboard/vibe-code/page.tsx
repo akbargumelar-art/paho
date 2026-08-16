@@ -2,19 +2,37 @@
 
 import { useEffect, useState, useRef } from "react";
 import Editor from "@monaco-editor/react";
-import { Folder, File, ChevronRight, ChevronDown, Save, Terminal, Play, FolderTree, FolderPlus, RefreshCw } from "lucide-react";
+import { Folder, File, ChevronRight, ChevronDown, Save, Terminal, Play, FolderTree, FolderPlus, RefreshCw, Send, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type FSItem = { name: string; path: string; isDirectory: boolean; children?: FSItem[]; isOpen?: boolean };
+type Message = { role: "user" | "assistant"; content: string; id: string };
 
 export default function VibeCodePage() {
+  // IDE State
   const [rootPath, setRootPath] = useState("/root/paho");
   const [root, setRoot] = useState<FSItem | null>(null);
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [code, setCode] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [launching, setLaunching] = useState(false);
-  const [launchCmd, setLaunchCmd] = useState("npx serve -p $PORT .");
+  const [launchCmd, setLaunchCmd] = useState("npx serve -l $PORT .");
+  
+  // Chat State
+  const [messages, setMessages] = useState<Message[]>([
+    { id: "1", role: "assistant", content: "Halo abay! Mau dibikinkan aplikasi apa hari ini? Sebutkan nama file atau instruksinya di sini." }
+  ]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
   
   const loadDir = async (path: string) => {
     const res = await fetch(`/api/vibe/files?path=${encodeURIComponent(path)}`);
@@ -89,7 +107,7 @@ export default function VibeCodePage() {
     try {
       const res = await fetch("/api/vibe/run", {
         method: "POST",
-        body: JSON.stringify({ path: rootPath, command: launchCmd.replace("$PORT", "3000") }) // Port will be replaced by backend
+        body: JSON.stringify({ path: rootPath, command: launchCmd.replace("$PORT", "3000") })
       });
       const data = await res.json();
       if (data.url) {
@@ -99,6 +117,67 @@ export default function VibeCodePage() {
       }
     } finally {
       setLaunching(false);
+    }
+  };
+
+  const handleSendChat = async () => {
+    if (!input.trim() || sending) return;
+    
+    const userMsg: Message = { id: Date.now().toString(), role: "user", content: input };
+    setMessages(prev => [...prev, userMsg]);
+    setInput("");
+    setSending(true);
+
+    try {
+      // Connect to Paho's existing generic chat API
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })),
+          // Add system prompt context so agent knows it's vibe coding
+          systemOverride: `Kamu adalah asisten Vibe Coding yang dijalankan dari Paho IDE. Workspace aktif user saat ini: ${rootPath}. Jika user meminta kamu membuat/mengedit file, kamu harus membalas dengan OK lalu menggunakan terminal (via Hermes) di belakang layar (jika ini terhubung dengan agent nyata). Untuk saat ini, Paho Chat sekadar simulasi chat antarmuka, sampaikan bahwa kamu mengerti instruksi.`,
+          model: "hermes"
+        })
+      });
+
+      if (!res.ok) throw new Error("Failed to send message");
+
+      // Handle streaming response if applicable, or plain json
+      // For simplicity in MVP, assuming a JSON reply or simple text stream
+      // Since standard /api/chat might be stream, let's just read it simply
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let assistantMsg = "";
+      
+      const msgId = (Date.now() + 1).toString();
+      setMessages(prev => [...prev, { id: msgId, role: "assistant", content: "" }]);
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value);
+          // Parse basic chunk if needed, assuming plain text chunks for now 
+          // or standard vercel ai sdk stream data format (0:"text")
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('0:')) {
+              try {
+                const text = JSON.parse(line.substring(2));
+                assistantMsg += text;
+                setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: assistantMsg } : m));
+              } catch (e) {}
+            }
+          }
+        }
+      }
+    } catch (e) {
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "assistant", content: "Maaf, koneksi ke Agent gagal." }]);
+    } finally {
+      setSending(false);
+      // Refresh file tree in case agent created files
+      setTimeout(() => initTree(), 2000);
     }
   };
 
@@ -163,7 +242,7 @@ export default function VibeCodePage() {
           value={launchCmd}
           onChange={e => setLaunchCmd(e.target.value)}
           className="bg-black border border-border rounded px-3 py-1.5 text-xs text-white w-48 focus:outline-none focus:border-primary hidden md:block"
-          placeholder="npx serve -p $PORT ."
+          placeholder="npx serve -l $PORT ."
         />
         <Button size="sm" onClick={launchApp} disabled={launching} className="h-8 text-xs bg-emerald-900 hover:bg-emerald-800 text-emerald-100 gap-1.5 mr-2">
           <Play className="w-3.5 h-3.5" /> {launching ? "Mencari Port..." : "Auto Launch & Preview"}
@@ -172,8 +251,9 @@ export default function VibeCodePage() {
 
       {/* IDE Body */}
       <div className="flex flex-1 border border-t-0 border-border rounded-b-lg overflow-hidden bg-black">
+        
         {/* Sidebar File Tree */}
-        <div className="w-64 border-r border-border bg-[#0d0d0d] flex flex-col">
+        <div className="w-56 border-r border-border bg-[#0d0d0d] flex flex-col shrink-0">
           <div className="flex-1 overflow-y-auto py-2 scrollbar-thin">
             {root ? renderTree([root]) : (
               <div className="text-center p-4 text-muted-foreground text-xs">
@@ -184,8 +264,7 @@ export default function VibeCodePage() {
         </div>
 
         {/* Main Editor Area */}
-        <div className="flex-1 flex flex-col">
-          {/* Editor Top Bar */}
+        <div className="flex-1 flex flex-col min-w-0">
           <div className="h-10 border-b border-border bg-[#111] flex items-center justify-between px-4">
             <div className="text-sm font-medium text-white/70 truncate flex-1">
               {activeFile || "Select a file to edit"}
@@ -196,8 +275,6 @@ export default function VibeCodePage() {
               </Button>
             </div>
           </div>
-
-          {/* Monaco Editor */}
           <div className="flex-1">
             {activeFile ? (
                <Editor
@@ -225,6 +302,62 @@ export default function VibeCodePage() {
             )}
           </div>
         </div>
+
+        {/* Right Sidebar - AI Chat */}
+        <div className="w-80 border-l border-border bg-[#0a0a0a] flex flex-col shrink-0">
+          <div className="h-10 border-b border-border bg-[#111] flex items-center px-4">
+            <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Agent Vibe Chat</span>
+          </div>
+          
+          {/* Chat Messages */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin text-sm">
+            {messages.map((m) => (
+              <div key={m.id} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+                <div className={`px-3 py-2 rounded-lg max-w-[90%] whitespace-pre-wrap ${m.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted border border-border'}`}>
+                  {m.content}
+                </div>
+                <span className="text-[10px] text-muted-foreground mt-1 mx-1 opacity-50">
+                  {m.role === 'user' ? 'You' : 'Agent'}
+                </span>
+              </div>
+            ))}
+            {sending && (
+              <div className="flex items-start">
+                <div className="px-3 py-2 rounded-lg bg-muted border border-border flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Mengetik...</span>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Chat Input */}
+          <div className="p-3 bg-[#111] border-t border-border">
+            <div className="flex gap-2">
+              <textarea
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendChat();
+                  }
+                }}
+                placeholder="Instruksikan perubahan..."
+                className="flex-1 bg-black border border-border rounded-md px-3 py-2 text-xs text-white focus:outline-none focus:border-primary resize-none h-10 scrollbar-none"
+                rows={1}
+              />
+              <Button size="icon" onClick={handleSendChat} disabled={sending || !input.trim()} className="h-10 w-10 shrink-0">
+                <Send className="w-4 h-4" />
+              </Button>
+            </div>
+            <p className="text-[9px] text-muted-foreground text-center mt-2">
+              Tekan Enter untuk kirim. Perubahan file otomatis terlihat.
+            </p>
+          </div>
+        </div>
+
       </div>
     </div>
   );
