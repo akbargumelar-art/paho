@@ -76,7 +76,7 @@ export default function BansosAIPage() {
                       <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">Models: {p.model_list}</p>
                     </div>
                     <div className="text-right flex flex-col sm:items-end gap-1">
-                      <a href={p.source_url} target="_blank" className="text-[10px] text-primary hover:underline">Lihat Sumber</a>
+                      <a href={p.source_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary hover:underline">Lihat Sumber</a>
                       <span className="text-[10px] text-muted-foreground">{p.first_seen}</span>
                     </div>
                   </div>

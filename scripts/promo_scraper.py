@@ -58,7 +58,10 @@ def scrape_openrouter(c):
         provider_map[prov].append(mid)
         
     for prov, mlist in provider_map.items():
-        if insert_promo(c, prov, url, "Free Tier (OpenRouter)", ", ".join(mlist), "OpenRouter Account", "verified"):
+        # Buat link manusia kalau mlist hanya 1 model, ke halaman model tersebut
+        # Kalau banyak, arahkan ke daftar provider
+        human_url = f"https://openrouter.ai/{mlist[0]}" if len(mlist) == 1 else f"https://openrouter.ai/models?q={prov}"
+        if insert_promo(c, prov, human_url, "Free Tier (OpenRouter)", ", ".join(mlist), "OpenRouter Account", "verified"):
             added += 1
     return added
 
