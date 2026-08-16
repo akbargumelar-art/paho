@@ -5,7 +5,6 @@ import path from "path";
 
 export const runtime = "nodejs";
 
-// Batasi akses hanya di bawah /root (atau spesifik project)
 const ALLOWED_ROOT = "/root";
 
 export async function GET(req: Request) {
@@ -15,7 +14,6 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const targetPath = searchParams.get("path") || "/root/paho";
   
-  // Keamanan: pastikan tidak bisa keluar dari ALLOWED_ROOT
   const absolutePath = path.resolve(targetPath);
   if (!absolutePath.startsWith(ALLOWED_ROOT)) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
@@ -51,10 +49,10 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { path: targetPath, content } = body;
+    const { action, path: targetPath, content } = body;
     
-    if (!targetPath || content === undefined) {
-      return NextResponse.json({ error: "Missing path or content" }, { status: 400 });
+    if (!targetPath) {
+      return NextResponse.json({ error: "Missing path" }, { status: 400 });
     }
 
     const absolutePath = path.resolve(targetPath);
@@ -62,7 +60,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    // Buat folder jika belum ada
+    if (action === "mkdir") {
+      await fs.mkdir(absolutePath, { recursive: true });
+      return NextResponse.json({ success: true, path: absolutePath, isDirectory: true });
+    }
+
+    if (content === undefined) {
+      return NextResponse.json({ error: "Missing content for file write" }, { status: 400 });
+    }
+
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
     await fs.writeFile(absolutePath, content, "utf-8");
     
