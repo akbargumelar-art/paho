@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useAppStore } from "@/lib/store"
 import type { Domain, RiskLevel, JobType, ApprovalPath, RepeatInterval, DashboardMetrics } from "@/lib/mock-data"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -36,6 +36,14 @@ export default function DashboardPage() {
   const { logs, approvals, tasks, reminders, reminderHistory, jobs, addTask, addReminder, addJob, metrics } = useAppStore()
   const recentLogs = [...logs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 10)
   const highRiskPending = approvals.filter(a => (a.riskLevel === "high" || a.riskLevel === "critical") && a.reviewStatus === "pending")
+  const [targetToday, setTargetToday] = useState(0)
+  const [pipelineWorkers, setPipelineWorkers] = useState<{worker:string;running:number;queued:number}[]>([])
+  const [recentOutputs, setRecentOutputs] = useState<{id:string;name:string;createdAt:string,size?:number}[]>([])
+  useEffect(() => {
+    const poll = setInterval(async () => { try { const r = await fetch("/api/dashboard/summary",{cache:"no-store"}); if(!r.ok)return; const d = await r.json(); if(d.targets){setTargetToday(d.targets.todayDone||0);setPipelineWorkers(d.pipeline?.workers||[]);setRecentOutputs(d.outputs?.items||[])} } catch {} },30_000);
+    void fetch("/api/dashboard/summary").then(r=>{if(!r.ok)return;r.json().then(d=>{setTargetToday(d.targets?.todayDone||0);setPipelineWorkers(d.pipeline?.workers||[]);setRecentOutputs(d.outputs?.items||[])});}).catch(()=>{});
+    return () => clearInterval(poll);
+  },[]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live metrics from store (computed from DB)
   const liveMetrics: DashboardMetrics = metrics || {
@@ -217,6 +225,16 @@ export default function DashboardPage() {
           )
         })}
       </div>
+
+      {/* Roundtable MVP: Target Harian, Pipeline Worker, Output Terbaru */}
+      <Card className="border-primary/30 bg-primary/5">
+        <CardHeader className="py-3"><CardTitle className="flex items-center gap-2 text-sm"><Zap className="h-4 w-4 text-primary" /> Hasil Roundtable (Dashboard Paho)</CardTitle></CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div><p className="text-xs text-muted-foreground">Target Harian</p><p className="text-lg font-semibold mt-1">{targetToday >= 3 ? "✅ Min. 3 sudah tercapai" : `🔵 ${targetToday} selesai hari ini (min. 3)`}</p><p className="text-[10px] text-muted-foreground mt-1">{pipelineWorkers.reduce((s,w)=>s+w.running,0)} job sedang berjalan</p></div>
+          <div><p className="text-xs text-muted-foreground">Pipeline Worker</p><div className="mt-1 flex flex-wrap gap-1"> {pipelineWorkers.map(w=><span key={w.worker} className="rounded border px-2 py-1 text-[10px]">{w.worker}: 🔴{w.running} 🟡{w.queued}</span>)}</div></div>
+          <div><p className="text-xs text-muted-foreground">Output Terbaru</p><ul className="mt-1 text-[11px] space-y-0.5"> {recentOutputs.slice(0,5).map(o=><li key={o.id} className="truncate">{o.name}</li>)}</ul></div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
